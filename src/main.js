@@ -4,11 +4,18 @@ import { BootScene } from './scenes/BootScene.js';
 import { RaceScene } from './scenes/RaceScene.js';
 import { ResultsScene } from './scenes/ResultsScene.js';
 
+// On mobile fullscreen (PWA), adjust game height to match screen aspect ratio
+// so the canvas fills the entire screen with no gaps
+const isMobilePWA = window.matchMedia('(display-mode: standalone)').matches
+  || window.navigator.standalone === true;
+const screenRatio = window.innerHeight / window.innerWidth;
+const gameHeight = isMobilePWA ? Math.round(GAME_WIDTH * screenRatio) : GAME_HEIGHT;
+
 const config = {
   type: Phaser.AUTO,
   parent: 'game-container',
   width: GAME_WIDTH,
-  height: GAME_HEIGHT,
+  height: gameHeight,
   backgroundColor: '#e8f4f8',
   scale: {
     mode: Phaser.Scale.FIT,
