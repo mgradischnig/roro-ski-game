@@ -389,7 +389,7 @@ export class RaceScene extends Phaser.Scene {
   createHUD() {
     const barWidth = GAME_WIDTH - 80;
     const barX = 40;
-    const barY = 38;
+    const barY = 14 + (window.SAFE_AREA_TOP || 0);
     const barH = 10;
 
     this.hudBarBg = this.add.graphics();
@@ -404,7 +404,7 @@ export class RaceScene extends Phaser.Scene {
 
     // Speed bar (visual speedometer)
     const speedBarX = GAME_WIDTH - 55;
-    const speedBarY = 58;
+    const speedBarY = barY + 20;
     const speedBarW = 42;
     const speedBarH = 8;
 
@@ -423,7 +423,7 @@ export class RaceScene extends Phaser.Scene {
     }).setOrigin(1, 0.5).setDepth(20);
 
     // Position indicator (big, left side)
-    this.positionText = this.add.text(16, 58, '1st', {
+    this.positionText = this.add.text(16, speedBarY, '1st', {
       fontSize: '20px',
       fontFamily: '"Press Start 2P", monospace',
       color: '#f4a261',
@@ -438,7 +438,7 @@ export class RaceScene extends Phaser.Scene {
   updateHUD() {
     const barWidth = GAME_WIDTH - 80;
     const barX = 40;
-    const barY = 38;
+    const barY = 14 + (window.SAFE_AREA_TOP || 0);
     const barH = 10;
 
     const progress = Phaser.Math.Clamp(this.distanceTraveled / RACE_DISTANCE, 0, 1);
@@ -449,7 +449,7 @@ export class RaceScene extends Phaser.Scene {
 
     // Speed bar — fills based on current speed relative to range [SLOW..MAX_CLEAN]
     const speedBarX = GAME_WIDTH - 55;
-    const speedBarY = 58;
+    const speedBarY = barY + 20;
     const speedBarW = 42;
     const speedBarH = 8;
     const speedFraction = Phaser.Math.Clamp(
