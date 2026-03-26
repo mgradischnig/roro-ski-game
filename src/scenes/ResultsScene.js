@@ -16,6 +16,9 @@ export class ResultsScene extends Phaser.Scene {
   create() {
     this.cameras.main.setBackgroundColor('#e8f4f8');
 
+    // Safe area offset for iPhone notch/status bar
+    const safeTop = window.SAFE_AREA_TOP || 0;
+
     // --- Header ---
     const positionMessages = {
       1: { text: '1ST PLACE!', color: '#f4a261' },
@@ -26,7 +29,7 @@ export class ResultsScene extends Phaser.Scene {
 
     const msg = positionMessages[this.playerPosition] || positionMessages[4];
 
-    const headerText = this.add.text(GAME_WIDTH / 2, 80, msg.text, {
+    const headerText = this.add.text(GAME_WIDTH / 2, 80 + safeTop, msg.text, {
       fontSize: '32px',
       fontFamily: '"Press Start 2P", monospace',
       color: msg.color,
@@ -47,7 +50,7 @@ export class ResultsScene extends Phaser.Scene {
     }
 
     // --- Podium results ---
-    const startY = 170;
+    const startY = 170 + safeTop;
     const rowHeight = 65;
     const podiumColors = [0xf4a261, 0xc0c0c0, 0xcd7f32, 0x888888]; // Gold, Silver, Bronze, 4th
 
