@@ -1,0 +1,10 @@
+{
+  "name": "RoRo Ski Game",
+  "short_name": "RoRo Ski",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1a1a2e",
+  "theme_color": "#e8f4f8",
+  "icons": []
+}
