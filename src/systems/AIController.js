@@ -41,7 +41,7 @@ export const AI_SKIERS = [
 ];
 
 export class AIController {
-  constructor(scene, config, sprite) {
+  constructor(scene, config, sprite, tierBaseSpeed = BASE_SCROLL_SPEED) {
     this.scene = scene;
     this.config = config;
     this.sprite = sprite;
@@ -51,7 +51,7 @@ export class AIController {
 
     // AI race state — speed is INDEPENDENT of player speed
     this.distance = 0;
-    this.baseSpeed = BASE_SCROLL_SPEED * config.baseSpeedRatio;
+    this.baseSpeed = tierBaseSpeed * config.baseSpeedRatio;
     this.currentSpeed = this.baseSpeed;
     this.targetX = GAME_WIDTH * config.lanePreference;
     this.moveSpeed = PLAYER_SPEED * (0.6 + config.skill * 0.4);
@@ -260,7 +260,8 @@ export class AIController {
    * More accurate than random time for results screen.
    */
   getProjectedFinishTime(currentRaceTime) {
-    const remaining = RACE_DISTANCE - this.distance;
+    const raceDistance = this.scene.tierRaceDistance || RACE_DISTANCE;
+    const remaining = raceDistance - this.distance;
     if (remaining <= 0) return currentRaceTime;
     return currentRaceTime + (remaining / this.currentSpeed) * 1000;
   }

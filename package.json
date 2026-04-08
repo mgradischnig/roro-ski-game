@@ -9,9 +9,11 @@
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "vite": "^8.0.1"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.100.1",
     "phaser": "^3.90.0"
   }
 }

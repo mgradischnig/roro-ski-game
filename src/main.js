@@ -1,8 +1,11 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from './config/gameConfig.js';
 import { BootScene } from './scenes/BootScene.js';
+import { PlayerSelectScene } from './scenes/PlayerSelectScene.js';
+import { QualifierScene } from './scenes/QualifierScene.js';
 import { RaceScene } from './scenes/RaceScene.js';
 import { ResultsScene } from './scenes/ResultsScene.js';
+import { ParentDashboardScene } from './scenes/ParentDashboardScene.js';
 
 // On mobile fullscreen (PWA), adjust game height to match screen aspect ratio
 // so the canvas fills the entire screen with no gaps
@@ -46,7 +49,7 @@ const config = {
       debug: false,
     },
   },
-  scene: [BootScene, RaceScene, ResultsScene],
+  scene: [BootScene, PlayerSelectScene, QualifierScene, RaceScene, ResultsScene, ParentDashboardScene],
   input: {
     activePointers: 2,
   },
@@ -57,3 +60,4 @@ const config = {
 };
 
 const game = new Phaser.Game(config);
+window.__PHASER_GAME__ = game;
