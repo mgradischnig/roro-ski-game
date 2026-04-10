@@ -78,7 +78,7 @@ export const ADAPTIVE = {
   ADVANCE_ACCURACY: 0.9,       // 90% over last 20 to advance
   ADVANCE_MIN_QUESTIONS: 20,
   ADVANCE_MAX_RESPONSE_MS: 5000,
-  DROP_ACCURACY: 0.6,          // Below 60% over last 10 to drop
+  DROP_ACCURACY: 0.5,          // Below 50% over last 10 to drop
   DROP_MIN_QUESTIONS: 10,
   WRONG_STREAK_THRESHOLD: 3,   // 3 wrong in a row → easier format
   TARGET_ACCURACY: 0.85,       // Ideal success rate
