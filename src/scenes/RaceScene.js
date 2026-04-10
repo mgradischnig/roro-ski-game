@@ -931,8 +931,8 @@ export class RaceScene extends Phaser.Scene {
 
     const dt = delta / 1000;
 
-    // --- Race timer ---
-    if (!this.raceFinished) {
+    // --- Race timer (paused during math popup) ---
+    if (!this.raceFinished && !this.mathPaused) {
       this.raceTime += delta;
     }
 
@@ -989,8 +989,10 @@ export class RaceScene extends Phaser.Scene {
     }
 
     // --- Update AI opponents (independent speed, rubber-banded) ---
+    // Freeze AI during math popup so the player isn't punished for answering
+    const aiDt = this.mathPaused ? 0 : dt;
     this.aiControllers.forEach(ai => {
-      ai.update(dt, time, this.obstacles, this.distanceTraveled);
+      ai.update(aiDt, time, this.obstacles, this.distanceTraveled);
 
       // Update AI sprite Y position based on relative distance
       const screenY = ai.getScreenY(this.distanceTraveled);
