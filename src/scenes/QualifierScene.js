@@ -602,59 +602,70 @@ export class QualifierScene extends Phaser.Scene {
     // --- World picker ---
     this.selectedThemeKey = null; // null = random
 
-    this.add.text(GAME_WIDTH / 2, 380 + safeTop, 'PICK YOUR WORLD', {
-      fontSize: '10px',
+    this.add.text(GAME_WIDTH / 2, 370 + safeTop, 'PICK YOUR WORLD', {
+      fontSize: '12px',
       fontFamily: '"Press Start 2P", monospace',
       color: '#457b9d',
     }).setOrigin(0.5);
 
     // Build picker items: Random + 6 themes
+    // Use first obstacle texture as the recognizable icon
     const pickerItems = [
-      { key: null, label: '?', color: 0x888888, name: 'Random' },
+      { key: null, label: 'Random', color: 0x888888, icon: null },
       ...SLOPE_THEME_KEYS.map(k => ({
         key: k,
-        label: SLOPE_THEMES[k].name.split(' ')[0].slice(0, 5),
+        label: SLOPE_THEMES[k].name.split(' ')[0],
         color: SLOPE_THEMES[k].bg.light,
-        name: SLOPE_THEMES[k].name,
+        icon: SLOPE_THEMES[k].obstacles[0],
       })),
     ];
 
-    const itemSize = 50;
-    const gap = 8;
-    const totalW = pickerItems.length * itemSize + (pickerItems.length - 1) * gap;
-    const startX = GAME_WIDTH / 2 - totalW / 2 + itemSize / 2;
-    const pickerY = 420 + safeTop;
+    // 2 rows: top 4, bottom 3 (centered)
+    const tileW = 80;
+    const tileH = 65;
+    const gap = 10;
+    const row1Count = 4;
+    const row1Y = 415 + safeTop;
+    const row2Y = row1Y + tileH + gap;
 
     this.worldHighlights = [];
 
     pickerItems.forEach((item, i) => {
-      const ix = startX + i * (itemSize + gap);
+      // Row and column position
+      const isRow1 = i < row1Count;
+      const rowCount = isRow1 ? row1Count : pickerItems.length - row1Count;
+      const col = isRow1 ? i : i - row1Count;
+      const rowTotalW = rowCount * tileW + (rowCount - 1) * gap;
+      const rowStartX = GAME_WIDTH / 2 - rowTotalW / 2 + tileW / 2;
+      const ix = rowStartX + col * (tileW + gap);
+      const iy = isRow1 ? row1Y : row2Y;
 
-      // Colored tile
-      const tile = this.add.rectangle(ix, pickerY, itemSize, itemSize, item.color, 0.9)
+      // Colored tile background
+      const tile = this.add.rectangle(ix, iy, tileW, tileH, item.color, 0.9)
         .setStrokeStyle(2, 0x999999)
         .setInteractive({ useHandCursor: true });
 
-      // Highlight border (hidden by default, shown for selected)
-      const highlight = this.add.rectangle(ix, pickerY, itemSize + 6, itemSize + 6)
+      // Highlight border (shown for selected)
+      const highlight = this.add.rectangle(ix, iy, tileW + 6, tileH + 6)
         .setStrokeStyle(3, COLORS.UI_ACCENT)
         .setFillStyle(0x000000, 0);
 
-      // "?" or short label on tile
-      const icon = item.key === null ? '?' : '';
-      if (icon) {
-        this.add.text(ix, pickerY, icon, {
-          fontSize: '22px',
+      // Icon: obstacle texture or "?" for random
+      if (item.icon) {
+        this.add.image(ix, iy - 6, item.icon).setScale(2.2);
+      } else {
+        this.add.text(ix, iy - 6, '?', {
+          fontSize: '28px',
           fontFamily: '"Press Start 2P", monospace',
           color: '#ffffff',
         }).setOrigin(0.5);
       }
 
-      // Name below tile
-      this.add.text(ix, pickerY + itemSize / 2 + 12, item.label, {
-        fontSize: '6px',
+      // Label below icon
+      this.add.text(ix, iy + tileH / 2 - 6, item.label, {
+        fontSize: '8px',
         fontFamily: '"Press Start 2P", monospace',
-        color: '#666666',
+        color: '#333333',
       }).setOrigin(0.5);
 
       // Default: first item (Random) is selected
