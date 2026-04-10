@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../config/gameConfig.js';
+import { GAME_WIDTH, GAME_HEIGHT, COLORS, SLOPE_THEMES, SLOPE_THEME_KEYS } from '../config/gameConfig.js';
 import { QUALIFIER, COINS, MATH_TIERS } from '../config/mathConfig.js';
 import { MathEngine } from '../systems/MathEngine.js';
 import { FrameRenderer } from '../ui/FrameRenderer.js';
@@ -599,9 +599,78 @@ export class QualifierScene extends Phaser.Scene {
       }).setOrigin(0.5);
     }
 
+    // --- World picker ---
+    this.selectedThemeKey = null; // null = random
+
+    this.add.text(GAME_WIDTH / 2, 380 + safeTop, 'PICK YOUR WORLD', {
+      fontSize: '10px',
+      fontFamily: '"Press Start 2P", monospace',
+      color: '#457b9d',
+    }).setOrigin(0.5);
+
+    // Build picker items: Random + 6 themes
+    const pickerItems = [
+      { key: null, label: '?', color: 0x888888, name: 'Random' },
+      ...SLOPE_THEME_KEYS.map(k => ({
+        key: k,
+        label: SLOPE_THEMES[k].name.split(' ')[0].slice(0, 5),
+        color: SLOPE_THEMES[k].bg.light,
+        name: SLOPE_THEMES[k].name,
+      })),
+    ];
+
+    const itemSize = 50;
+    const gap = 8;
+    const totalW = pickerItems.length * itemSize + (pickerItems.length - 1) * gap;
+    const startX = GAME_WIDTH / 2 - totalW / 2 + itemSize / 2;
+    const pickerY = 420 + safeTop;
+
+    this.worldHighlights = [];
+
+    pickerItems.forEach((item, i) => {
+      const ix = startX + i * (itemSize + gap);
+
+      // Colored tile
+      const tile = this.add.rectangle(ix, pickerY, itemSize, itemSize, item.color, 0.9)
+        .setStrokeStyle(2, 0x999999)
+        .setInteractive({ useHandCursor: true });
+
+      // Highlight border (hidden by default, shown for selected)
+      const highlight = this.add.rectangle(ix, pickerY, itemSize + 6, itemSize + 6)
+        .setStrokeStyle(3, COLORS.UI_ACCENT)
+        .setFillStyle(0x000000, 0);
+
+      // "?" or short label on tile
+      const icon = item.key === null ? '?' : '';
+      if (icon) {
+        this.add.text(ix, pickerY, icon, {
+          fontSize: '22px',
+          fontFamily: '"Press Start 2P", monospace',
+          color: '#ffffff',
+        }).setOrigin(0.5);
+      }
+
+      // Name below tile
+      this.add.text(ix, pickerY + itemSize / 2 + 12, item.label, {
+        fontSize: '6px',
+        fontFamily: '"Press Start 2P", monospace',
+        color: '#666666',
+      }).setOrigin(0.5);
+
+      // Default: first item (Random) is selected
+      highlight.setVisible(i === 0);
+      this.worldHighlights.push(highlight);
+
+      tile.on('pointerup', () => {
+        this.selectedThemeKey = item.key;
+        this.worldHighlights.forEach(h => h.setVisible(false));
+        highlight.setVisible(true);
+      });
+    });
+
     // START RACE button
-    const btnY = GAME_HEIGHT - 120;
-    const bg = this.add.rectangle(GAME_WIDTH / 2, btnY, 300, 60, COLORS.UI_DARK, 0.9)
+    const btnY = GAME_HEIGHT - 90;
+    const bg = this.add.rectangle(GAME_WIDTH / 2, btnY, 300, 55, COLORS.UI_DARK, 0.9)
       .setInteractive({ useHandCursor: true });
     const btnText = this.add.text(GAME_WIDTH / 2, btnY, 'START RACE!', {
       fontSize: '18px',
@@ -629,6 +698,9 @@ export class QualifierScene extends Phaser.Scene {
   }
 
   startRace(stars, bonus) {
+    // Resolve theme: null = random pick
+    const themeKey = this.selectedThemeKey || Phaser.Math.RND.pick(SLOPE_THEME_KEYS);
+
     this.scene.start('RaceScene', {
       playerId: this.playerId,
       playerName: this.playerName,
@@ -637,6 +709,7 @@ export class QualifierScene extends Phaser.Scene {
       shield: bonus.shield,
       qualifierResponses: this.questionResponses,
       qualifierCoins: this.coinsEarned,
+      themeKey,
     });
   }
 }

@@ -29,11 +29,12 @@ export class RaceScene extends Phaser.Scene {
     this.hasShield = data?.shield || false;
     this.qualifierResponses = data?.qualifierResponses || [];
     this.qualifierCoins = data?.qualifierCoins || 0;
+    this.themeKey = data?.themeKey || null;
   }
 
   create() {
-    // --- Random slope theme ---
-    const themeKey = Phaser.Math.RND.pick(SLOPE_THEME_KEYS);
+    // --- Slope theme (from world picker, or random fallback) ---
+    const themeKey = this.themeKey || Phaser.Math.RND.pick(SLOPE_THEME_KEYS);
     this.theme = SLOPE_THEMES[themeKey];
 
     // --- Tier-based difficulty ---
