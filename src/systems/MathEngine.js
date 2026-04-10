@@ -122,16 +122,9 @@ export const MathEngine = {
       return this._buildTrueFalse(tier, tierConfig, target, partA, partB, equationParts);
     }
 
-    // Generate distractors for multiple choice
-    const distractors = format === 'multiple_choice' || format === 'part_whole'
-      ? this.generateDistractors(correctAnswer, target, partA, partB, operation)
-      : [];
-
-    // Shuffle options for MC
-    let options = [];
-    if (distractors.length > 0) {
-      options = this._shuffleArray([correctAnswer, ...distractors]);
-    }
+    // Always generate MC options so any format can fall back to multiple choice
+    const distractors = this.generateDistractors(correctAnswer, target, partA, partB, operation);
+    const options = this._shuffleArray([correctAnswer, ...distractors]);
 
     return {
       questionText,
