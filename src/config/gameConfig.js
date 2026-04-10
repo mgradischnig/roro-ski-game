@@ -141,6 +141,28 @@ export const SLOPE_THEMES = {
     particleAlpha: [0.4, 0.9],
     particleInterval: 130,
   },
+  mars: {
+    name: 'Mars',
+    bg: { light: 0xc4553a, mid: 0xa84430, dark: 0x8a3525, trail: 0xd46a50 },
+    edge: { strip: 0x8a3525 },
+    obstacles: ['mars_crater', 'mars_rock'],
+    edgeDeco: 'mars_cliff',
+    particle: 'mars_dust',
+    particleColor: 0xd48050,
+    particleAlpha: [0.3, 0.6],
+    particleInterval: 100,
+  },
+  coconut: {
+    name: 'Coconut',
+    bg: { light: 0x5aaa3a, mid: 0x4a9030, dark: 0x3a7825, trail: 0x6abb50 },
+    edge: { strip: 0x3a7825 },
+    obstacles: ['coconut', 'coconut_bunch'],
+    edgeDeco: 'coconut_palm',
+    particle: 'leaf',
+    particleColor: 0x44aa33,
+    particleAlpha: [0.3, 0.6],
+    particleInterval: 180,
+  },
 };
 
 export const SLOPE_THEME_KEYS = Object.keys(SLOPE_THEMES);

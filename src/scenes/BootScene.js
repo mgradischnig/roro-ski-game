@@ -528,5 +528,133 @@ export class BootScene extends Phaser.Scene {
       gfx.fillStyle(0xffaa44, 0.6);
       gfx.fillCircle(3, 3, 1.5);
     });
+
+    // ===== MARS =====
+
+    // Mars crater obstacle
+    g('mars_crater', 24, 22, gfx => {
+      // Outer rim
+      gfx.fillStyle(0x8a4030, 1);
+      gfx.fillEllipse(12, 12, 22, 18);
+      // Inner shadow
+      gfx.fillStyle(0x5a2818, 1);
+      gfx.fillEllipse(12, 13, 16, 12);
+      // Dark center
+      gfx.fillStyle(0x3a1810, 0.8);
+      gfx.fillEllipse(12, 14, 10, 7);
+      // Rim highlight
+      gfx.fillStyle(0xbb6644, 0.5);
+      gfx.fillEllipse(12, 8, 14, 5);
+    });
+
+    // Mars rock obstacle (jagged red-brown)
+    g('mars_rock', 22, 20, gfx => {
+      gfx.fillStyle(0x9a4a30, 1);
+      gfx.fillTriangle(11, 0, 0, 18, 22, 18);
+      gfx.fillStyle(0x7a3820, 1);
+      gfx.fillTriangle(11, 4, 3, 18, 19, 18);
+      // Highlight edge
+      gfx.fillStyle(0xbb6644, 0.4);
+      gfx.fillTriangle(11, 0, 6, 10, 16, 10);
+      // Base
+      gfx.fillStyle(0x6a2a18, 1);
+      gfx.fillRect(1, 16, 20, 4);
+    });
+
+    // Mars cliff edge deco
+    g('mars_cliff', 22, 28, gfx => {
+      // Mesa shape
+      gfx.fillStyle(0x8a3a25, 1);
+      gfx.fillRect(2, 8, 18, 20);
+      // Flat top
+      gfx.fillStyle(0x9a4a30, 1);
+      gfx.fillRect(0, 6, 22, 6);
+      // Erosion lines
+      gfx.lineStyle(1, 0x6a2a18, 0.5);
+      gfx.lineBetween(5, 14, 5, 28);
+      gfx.lineBetween(12, 12, 12, 28);
+      gfx.lineBetween(17, 16, 17, 28);
+      // Highlight
+      gfx.fillStyle(0xbb6644, 0.3);
+      gfx.fillRect(0, 6, 22, 3);
+    });
+
+    // Mars dust particle
+    g('mars_dust', 5, 5, gfx => {
+      gfx.fillStyle(0xd48050, 0.8);
+      gfx.fillCircle(2.5, 2.5, 2.5);
+    });
+
+    // ===== COCONUT FOREST =====
+
+    // Coconut obstacle (round brown coconut)
+    g('coconut', 18, 18, gfx => {
+      // Main shell
+      gfx.fillStyle(0x6b3a1a, 1);
+      gfx.fillCircle(9, 9, 8);
+      // Shell texture (darker band)
+      gfx.fillStyle(0x552a10, 0.6);
+      gfx.fillEllipse(9, 9, 14, 10);
+      // Three eyes
+      gfx.fillStyle(0x3a1a08, 1);
+      gfx.fillCircle(6, 6, 1.5);
+      gfx.fillCircle(12, 6, 1.5);
+      gfx.fillCircle(9, 10, 1.5);
+      // Highlight
+      gfx.fillStyle(0x8b5a3a, 0.4);
+      gfx.fillCircle(7, 5, 3);
+    });
+
+    // Coconut bunch obstacle (cluster)
+    g('coconut_bunch', 24, 22, gfx => {
+      // Three coconuts in a cluster
+      gfx.fillStyle(0x6b3a1a, 1);
+      gfx.fillCircle(8, 14, 7);
+      gfx.fillCircle(16, 14, 7);
+      gfx.fillCircle(12, 7, 7);
+      // Darker centers
+      gfx.fillStyle(0x3a1a08, 0.5);
+      gfx.fillCircle(8, 14, 4);
+      gfx.fillCircle(16, 14, 4);
+      gfx.fillCircle(12, 7, 4);
+      // Highlights
+      gfx.fillStyle(0x8b5a3a, 0.3);
+      gfx.fillCircle(6, 12, 2);
+      gfx.fillCircle(14, 12, 2);
+      gfx.fillCircle(10, 5, 2);
+    });
+
+    // Coconut palm edge deco
+    g('coconut_palm', 24, 34, gfx => {
+      // Trunk (slightly curved)
+      gfx.fillStyle(0x7a5a30, 1);
+      gfx.fillRect(10, 10, 4, 24);
+      // Trunk rings
+      gfx.lineStyle(1, 0x6a4a20, 0.5);
+      for (let y = 12; y < 32; y += 3) {
+        gfx.lineBetween(10, y, 14, y);
+      }
+      // Fronds (big tropical leaves)
+      gfx.fillStyle(0x33aa22, 1);
+      gfx.fillTriangle(12, 0, 0, 14, 12, 10);
+      gfx.fillTriangle(12, 0, 24, 14, 12, 10);
+      gfx.fillStyle(0x44bb33, 0.8);
+      gfx.fillTriangle(12, 2, 2, 10, 12, 8);
+      gfx.fillTriangle(12, 2, 22, 10, 12, 8);
+      // Coconuts hanging
+      gfx.fillStyle(0x6b3a1a, 1);
+      gfx.fillCircle(9, 10, 2.5);
+      gfx.fillCircle(15, 10, 2.5);
+      gfx.fillCircle(12, 12, 2.5);
+    });
+
+    // Leaf particle
+    g('leaf', 7, 5, gfx => {
+      gfx.fillStyle(0x44aa33, 0.8);
+      gfx.fillEllipse(3.5, 2.5, 7, 4);
+      // Leaf vein
+      gfx.lineStyle(0.5, 0x338822, 0.5);
+      gfx.lineBetween(0, 2.5, 7, 2.5);
+    });
   }
 }

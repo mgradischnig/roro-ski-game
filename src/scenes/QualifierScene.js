@@ -620,25 +620,25 @@ export class QualifierScene extends Phaser.Scene {
       })),
     ];
 
-    // 2 rows: top 4, bottom 3 (centered)
+    // 3x3 grid
     const tileW = 80;
     const tileH = 65;
     const gap = 10;
-    const row1Count = 4;
-    const row1Y = 415 + safeTop;
-    const row2Y = row1Y + tileH + gap;
+    const cols = 3;
+    const rowStartY = 410 + safeTop;
 
     this.worldHighlights = [];
 
     pickerItems.forEach((item, i) => {
-      // Row and column position
-      const isRow1 = i < row1Count;
-      const rowCount = isRow1 ? row1Count : pickerItems.length - row1Count;
-      const col = isRow1 ? i : i - row1Count;
+      const row = Math.floor(i / cols);
+      const col = i % cols;
+      // Center each row (handles partial last row)
+      const rowStart = i - (i % cols);
+      const rowCount = Math.min(cols, pickerItems.length - rowStart);
       const rowTotalW = rowCount * tileW + (rowCount - 1) * gap;
       const rowStartX = GAME_WIDTH / 2 - rowTotalW / 2 + tileW / 2;
       const ix = rowStartX + col * (tileW + gap);
-      const iy = isRow1 ? row1Y : row2Y;
+      const iy = rowStartY + row * (tileH + gap + 14);
 
       // Colored tile background
       const tile = this.add.rectangle(ix, iy, tileW, tileH, item.color, 0.9)
