@@ -1082,5 +1082,30 @@ export class BootScene extends Phaser.Scene {
       gfx.fillStyle(0x2244aa, 1);
       gfx.fillRect(1, 6, 3, 4);
     });
+
+    // ===== S-CURVE ROAD (M3): corridor sprites + oil-slick spin hazard =====
+
+    // Oil slick hazard — near-black irregular flat ellipse with a thin
+    // purple sheen arc (spins the car instead of slowing it)
+    g('oil_slick', 22, 12, gfx => {
+      gfx.fillStyle(0x1a1a22, 0.9);
+      gfx.fillEllipse(11, 6, 20, 9);
+      gfx.fillEllipse(7, 7, 12, 6);
+      gfx.lineStyle(1.5, 0x8866cc, 0.5);
+      gfx.lineBetween(5, 4, 15, 5);
+    });
+
+    // Curb segment — plain white rect; the scene tints alternate segments
+    // red to make the alternating curb pattern as it scrolls
+    g('curb_segment', 12, 26, gfx => {
+      gfx.fillStyle(0xffffff, 1);
+      gfx.fillRect(0, 0, 12, 26);
+    });
+
+    // Lane dash — light rect used for the scrolling dashed lane lines
+    g('lane_dash', 4, 26, gfx => {
+      gfx.fillStyle(0xf0f0f0, 1);
+      gfx.fillRect(0, 0, 4, 26);
+    });
   }
 }

@@ -1,5 +1,6 @@
 // Car Racing config — mirrors the shape of src/config/gameConfig.js
 // for the ski game, but for the "RoRo Racing" car mode.
+import { GAME_WIDTH } from './gameConfig.js';
 
 // Per-tier difficulty scaling for car racing (tier 2 = baseline, matches
 // gameConfig's TIER_DIFFICULTY values verbatim, plus a traffic spawn cadence).
@@ -61,6 +62,20 @@ export const CAR_GEOMETRY = {
 
 // Player car sits this many px above the real bottom of the canvas.
 export const CAR_PLAYER_BOTTOM_OFFSET = 150;
+
+// S-curved road: the drivable corridor's center drifts as a slow sine of
+// distance. ONE shared helper — every spawn/clamp site calls this; never
+// scatter per-site offsets.
+export const ROAD_CURVE = { AMPLITUDE: 55, WAVELENGTH: 2600 };
+export const CORRIDOR_HALF_WIDTH = 165;
+export function roadCenterAt(distance) {
+  return GAME_WIDTH / 2
+    + ROAD_CURVE.AMPLITUDE * Math.sin((distance / ROAD_CURVE.WAVELENGTH) * Math.PI * 2);
+}
+
+// Hazards that spin the car instead of slowing it (oil physics):
+export const SPIN_HAZARDS = ['oil_slick', 'ice_patch', 'puddle'];
+export const OIL_SPAWN_CHANCE = 0.12; // fraction of static spawns that are oil slicks (all tracks)
 
 // Track themes — random visual variety per race (same shape as gameConfig's
 // SLOPE_THEMES). Only one track for now.
