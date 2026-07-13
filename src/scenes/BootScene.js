@@ -771,5 +771,170 @@ export class BootScene extends Phaser.Scene {
       gfx.fillStyle(0xff6b9d, 0.9);
       gfx.fillRect(2, 2, 4, 4);
     });
+
+    // Pit zone — glowing amber rectangle with a wrench icon (nitro reward zone)
+    g('pit_zone', 80, 60, gfx => {
+      const zoneW = 80;
+      const zoneH = 60;
+      // Outer glow (soft edge)
+      gfx.fillStyle(0xffdd57, 0.15);
+      gfx.fillRoundedRect(0, 0, zoneW, zoneH, 10);
+      // Inner fill
+      gfx.fillStyle(0xffdd57, 0.35);
+      gfx.fillRoundedRect(4, 4, zoneW - 8, zoneH - 8, 8);
+      // Border
+      gfx.lineStyle(2, 0xffaa22, 0.8);
+      gfx.strokeRoundedRect(4, 4, zoneW - 8, zoneH - 8, 8);
+      // Wrench icon in center (white): open C-shape head + handle bar
+      gfx.fillStyle(0xffffff, 0.9);
+      gfx.fillRect(30, 10, 20, 5);   // head top bar
+      gfx.fillRect(30, 10, 5, 16);   // head left bar
+      gfx.fillRect(30, 21, 20, 5);   // head bottom bar (open on the right)
+      gfx.fillRect(37, 26, 6, 24);   // vertical handle bar
+    });
+
+    // Flame — teardrop nitro flame, narrowing to a tip upward
+    g('flame', 10, 14, gfx => {
+      // Outer flame body (orange)
+      gfx.fillStyle(0xff6622, 1);
+      gfx.fillEllipse(5, 8, 8, 10);
+      gfx.fillTriangle(5, 0, 2, 6, 8, 6);
+      // Inner flame (yellow), smaller
+      gfx.fillStyle(0xffdd57, 1);
+      gfx.fillEllipse(5, 9, 4, 5);
+      gfx.fillTriangle(5, 3, 3.5, 7, 6.5, 7);
+    });
+
+    // Police car — white body, black hood/trunk blocks, gray cabin, roof light bar
+    const drawPoliceCar = (gfx, redLeft) => {
+      gfx.fillStyle(0xf0f0f0, 1);
+      gfx.fillRoundedRect(3, 2, 14, 28, 4);
+      // Black hood block (top quarter)
+      gfx.fillStyle(0x1a1a1a, 1);
+      gfx.fillRect(4, 3, 12, 6);
+      // Black trunk block (bottom quarter)
+      gfx.fillRect(4, 23, 12, 6);
+      // Gray cabin / windshield
+      gfx.fillStyle(0x777777, 1);
+      gfx.fillRoundedRect(6, 12, 8, 8, 2);
+      // Wheel stubs (corners)
+      gfx.fillStyle(0x2a2a2a, 1);
+      gfx.fillRect(0, 4, 4, 8);
+      gfx.fillRect(16, 4, 4, 8);
+      gfx.fillRect(0, 20, 4, 8);
+      gfx.fillRect(16, 20, 4, 8);
+      // Roof light bar (3px tall, across roof center)
+      const barY = 14;
+      gfx.fillStyle(redLeft ? 0xff2222 : 0x2244ff, 1);
+      gfx.fillRect(6, barY, 4, 3);
+      gfx.fillStyle(redLeft ? 0x2244ff : 0xff2222, 1);
+      gfx.fillRect(10, barY, 4, 3);
+    };
+    // car_police: red left half, blue right half
+    g('car_police', 20, 32, gfx => drawPoliceCar(gfx, true));
+    // car_police_alt: IDENTICAL except the light bar halves swap (flicker target)
+    g('car_police_alt', 20, 32, gfx => drawPoliceCar(gfx, false));
+
+    // F1 racer — open-wheel silhouette: navy body, red nose tip, yellow
+    // accent stripe, four exposed wheels, cockpit oval, rear wing.
+    g('car_f1', 20, 34, gfx => {
+      // Navy body: narrow nose (top third) widening to mid-body
+      gfx.fillStyle(0x1a2a5a, 1);
+      gfx.fillTriangle(10, 2, 7, 12, 13, 12); // narrow nose, 6px wide at base
+      gfx.fillRoundedRect(4, 12, 12, 16, 3);  // mid-body, 12px wide
+      // Red nose tip (top 4px)
+      gfx.fillStyle(0xe63946, 1);
+      gfx.fillTriangle(10, 2, 8.5, 6, 11.5, 6);
+      // Yellow accent stripe across the nose base
+      gfx.fillStyle(0xffdd57, 1);
+      gfx.fillRect(7, 11, 6, 2);
+      // Four exposed wheels (black rects, 5x8), slightly away from body sides
+      gfx.fillStyle(0x1a1a1a, 1);
+      gfx.fillRect(0, 6, 5, 8);
+      gfx.fillRect(15, 6, 5, 8);
+      gfx.fillRect(0, 24, 5, 8);
+      gfx.fillRect(15, 24, 5, 8);
+      // Axle lines connecting wheels (2px dark gray)
+      gfx.fillStyle(0x444444, 1);
+      gfx.fillRect(5, 9, 10, 2);
+      gfx.fillRect(5, 27, 10, 2);
+      // Small gray cockpit oval, mid-body
+      gfx.fillStyle(0x777777, 1);
+      gfx.fillEllipse(10, 18, 6, 8);
+      // Rear wing: dark navy 16x3 rect across the tail
+      gfx.fillStyle(0x142248, 1);
+      gfx.fillRect(2, 31, 16, 3);
+    });
+
+    // Taxi — like traffic_car but yellow, checker strip, dark roof toward
+    // the bottom (nose down)
+    g('taxi', 20, 30, gfx => {
+      gfx.fillStyle(0xffcc22, 1);
+      gfx.fillRoundedRect(3, 1, 14, 26, 4);
+      // Black-and-white checker strip across the mid-body
+      const checkY = 12;
+      for (let col = 0; col < 7; col++) {
+        gfx.fillStyle(col % 2 === 0 ? 0x1a1a1a : 0xffffff, 1);
+        gfx.fillRect(3 + col * 2, checkY, 2, 2);
+      }
+      // Dark roof toward the bottom (front) since nose points down
+      gfx.fillStyle(0x7a6a1a, 1);
+      gfx.fillRoundedRect(6, 14, 8, 9, 2);
+      // Wheel stubs
+      gfx.fillStyle(0x2a2a2a, 1);
+      gfx.fillRect(0, 3, 4, 7);
+      gfx.fillRect(16, 3, 4, 7);
+      gfx.fillRect(0, 18, 4, 7);
+      gfx.fillRect(16, 18, 4, 7);
+    });
+
+    // Roadblock — orange-and-white diagonally striped bar on two dark legs
+    g('roadblock', 22, 14, gfx => {
+      // Two small dark legs
+      gfx.fillStyle(0x333333, 1);
+      gfx.fillRect(2, 8, 3, 6);
+      gfx.fillRect(17, 8, 3, 6);
+      // Striped bar (vertical stripes standing in for diagonal warning stripes)
+      const barY = 0;
+      const barH = 9;
+      for (let col = 0; col < 11; col++) {
+        gfx.fillStyle(col % 2 === 0 ? 0xff8822 : 0xffffff, 1);
+        gfx.fillRect(col * 2, barY, 2, barH);
+      }
+    });
+
+    // Neon building — dark block with a 3x4 grid of lit windows, magenta roof strip
+    g('neon_building', 24, 30, gfx => {
+      gfx.fillStyle(0x22223a, 1);
+      gfx.fillRect(0, 2, 24, 28);
+      // Magenta roof edge strip
+      gfx.fillStyle(0xff44cc, 1);
+      gfx.fillRect(0, 0, 24, 2);
+      // 3x4 grid of small lit windows
+      const windowColors = [0xffee88, 0x66ffff, 0xff66aa];
+      const cols = 3;
+      const rows = 4;
+      const winW = 4;
+      const winH = 4;
+      const gapX = 3;
+      const gapY = 3;
+      const startX = 3;
+      const startY = 6;
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          gfx.fillStyle(windowColors[(row + col) % 3], 1);
+          gfx.fillRect(startX + col * (winW + gapX), startY + row * (winH + gapY), winW, winH);
+        }
+      }
+    });
+
+    // Light sparkle — tiny 4-point star: two crossed 2px bars with a bright center
+    g('light_sparkle', 6, 6, gfx => {
+      gfx.fillStyle(0xffee88, 0.8);
+      gfx.fillRect(2, 0, 2, 6);
+      gfx.fillRect(0, 2, 6, 2);
+      gfx.fillStyle(0xffffff, 1);
+      gfx.fillRect(2, 2, 2, 2);
+    });
   }
 }

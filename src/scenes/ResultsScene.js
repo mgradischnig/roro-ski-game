@@ -26,6 +26,7 @@ export class ResultsScene extends Phaser.Scene {
     this.qualifierCoins = data.qualifierCoins || 0;
     this.raceCoins = data.raceCoins || 0;
     this.gameMode = data?.game || 'ski';
+    this.nitroUsed = data.nitroUsed || 0;
   }
 
   create() {
@@ -170,6 +171,16 @@ export class ResultsScene extends Phaser.Scene {
           fontFamily: '"Press Start 2P", monospace',
           color: '#457b9d',
         }).setOrigin(0.5);
+    }
+
+    // --- Nitro stats (car mode only) ---
+    if (this.gameMode === 'car' && this.nitroUsed > 0) {
+      const nitroY = statsY + (totalCoins > 0 ? 75 : 30) + (this.mathTotalInRace > 0 ? 22 : 0);
+      this.add.text(GAME_WIDTH / 2, nitroY, `NITRO x${this.nitroUsed}`, {
+        fontSize: '9px',
+        fontFamily: '"Press Start 2P", monospace',
+        color: '#457b9d',
+      }).setOrigin(0.5);
     }
 
     // --- Buttons ---
@@ -320,6 +331,7 @@ export class ResultsScene extends Phaser.Scene {
         qualifier_stars: this.qualifierStars,
         finish_position: this.playerPosition,
         game: this.gameMode,
+        nitro_used: this.nitroUsed,
       };
       const newBadges = await BadgeSystem.checkAndAward(this.playerId, sessionInfo);
       if (newBadges.length > 0) {

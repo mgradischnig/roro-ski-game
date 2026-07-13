@@ -76,9 +76,49 @@ export const TRACK_THEMES = {
     particleAlpha: [0.5, 0.9],
     particleInterval: 400,
   },
+  citynight: {
+    name: 'City Night',
+    bg: { light: 0x23233a, mid: 0x1a1a2c, dark: 0x121220, trail: 0xcccc55 },
+    edge: { strip: 0x3355aa },
+    obstacles: ['taxi', 'roadblock'],
+    edgeDeco: 'neon_building',
+    particle: 'light_sparkle',
+    particleColor: 0xffee88,
+    particleAlpha: [0.3, 0.8],
+    particleInterval: 250,
+  },
 };
 
 export const TRACK_THEME_KEYS = Object.keys(TRACK_THEMES);
+
+// Qualifier rewards for the car game: 4-5 stars = pole position
+// (head start), 5 stars additionally = bumper armor (the ski shield,
+// renamed). Head start must stay <= RUBBER_BAND_DEAD_ZONE (150) or the
+// AI catch-up boost erodes it immediately.
+export const CAR_QUALIFIER_REWARDS = {
+  5: { polePosition: true, armor: true, label: 'Pole Position + Bumper Armor!' },
+  4: { polePosition: true, armor: false, label: 'Pole Position!' },
+  3: { polePosition: false, armor: false, label: null },
+  2: { polePosition: false, armor: false, label: null },
+  1: { polePosition: false, armor: false, label: null },
+  0: { polePosition: false, armor: false, label: null },
+};
+export const POLE_POSITION_HEAD_START = 140; // px of AI distance deficit
+
+// Cosmetic car picker roster (M2: headliners; recolors land in M3)
+export const CARS = [
+  { key: 'red_rocket', name: 'Red Rocket', texture: 'car_player' },
+  { key: 'police', name: 'Police Car', texture: 'car_police' },
+  { key: 'f1', name: 'F1 Racer', texture: 'car_f1' },
+];
+
+// Nitro: correct pit-zone answers bank charges; the player fires them
+// with the NITRO button whenever they choose.
+export const NITRO = {
+  MAX_CHARGES: 3,
+  BOOST_MS: 2500,          // flame window duration
+  INVINCIBLE: true,        // crash-proof while the flame is on (config-flag fallback: false)
+};
 
 /**
  * AI opponent racer configurations.

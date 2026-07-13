@@ -57,7 +57,7 @@ const config = {
   },
   scene: [BootScene, PlayerSelectScene, GameSelectScene, QualifierScene, RaceScene, CarRaceScene, ResultsScene, ParentDashboardScene],
   input: {
-    activePointers: 2,
+    activePointers: 3,
   },
   render: {
     pixelArt: true,
