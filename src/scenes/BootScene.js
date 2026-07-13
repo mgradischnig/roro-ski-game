@@ -689,6 +689,56 @@ export class BootScene extends Phaser.Scene {
       gfx.fillRect(9, 2, 2, 28);
     });
 
+    // Recolor cars (M3 cosmetic roster) — same silhouette/wheels as
+    // car_player, no racing stripe.
+    // Green Machine — teal-green body, darker teal-green cabin
+    g('car_green', 20, 32, gfx => {
+      gfx.fillStyle(0x2a9d8f, 1);
+      gfx.fillRoundedRect(3, 2, 14, 28, 4);
+      // Cabin / windshield (dark teal-green)
+      gfx.fillStyle(0x1a6d62, 1);
+      gfx.fillRoundedRect(6, 7, 8, 9, 2);
+      // Wheel stubs (corners)
+      gfx.fillStyle(0x2a2a2a, 1);
+      gfx.fillRect(0, 4, 4, 8);
+      gfx.fillRect(16, 4, 4, 8);
+      gfx.fillRect(0, 20, 4, 8);
+      gfx.fillRect(16, 20, 4, 8);
+    });
+
+    // Pink Lightning — pink body, darker pink cabin, yellow lightning
+    // zigzag (3 short angled rects) down the middle
+    g('car_pink', 20, 32, gfx => {
+      gfx.fillStyle(0xff69b4, 1);
+      gfx.fillRoundedRect(3, 2, 14, 28, 4);
+      // Cabin / windshield (darker pink)
+      gfx.fillStyle(0xd14a94, 1);
+      gfx.fillRoundedRect(6, 7, 8, 9, 2);
+      // Wheel stubs (corners)
+      gfx.fillStyle(0x2a2a2a, 1);
+      gfx.fillRect(0, 4, 4, 8);
+      gfx.fillRect(16, 4, 4, 8);
+      gfx.fillRect(0, 20, 4, 8);
+      gfx.fillRect(16, 20, 4, 8);
+      // Yellow lightning zigzag — 3 short angled rects down the middle
+      gfx.fillStyle(0xffdd57, 1);
+      gfx.save();
+      gfx.translateCanvas(10, 8);
+      gfx.rotateCanvas(Phaser.Math.DegToRad(20));
+      gfx.fillRect(-1.5, 0, 3, 8);
+      gfx.restore();
+      gfx.save();
+      gfx.translateCanvas(9, 15);
+      gfx.rotateCanvas(Phaser.Math.DegToRad(-20));
+      gfx.fillRect(-1.5, 0, 3, 8);
+      gfx.restore();
+      gfx.save();
+      gfx.translateCanvas(10, 22);
+      gfx.rotateCanvas(Phaser.Math.DegToRad(20));
+      gfx.fillRect(-1.5, 0, 3, 8);
+      gfx.restore();
+    });
+
     // AI racer cars — same silhouette, colored bodies, gray cabin, no stripe
     const aiCarColors = [
       { name: 'car_ai_blue', body: 0x4488ff },

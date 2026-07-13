@@ -240,6 +240,17 @@ export class ParentDashboardScene extends Phaser.Scene {
   async showPlayerData(player) {
     let y = this.headerHeight + 15;
 
+    // Per-game session split (total_races/races_won on players are
+    // cross-game lifetime counters — this breaks them down by game for the
+    // overview card). Historic rows were backfilled with game='ski'; treat
+    // a null game as ski too.
+    const { data: sessionGames } = await supabase
+      .from('sessions')
+      .select('game')
+      .eq('player_id', player.id);
+    const skiSessionCount = (sessionGames || []).filter(s => s.game !== 'car').length;
+    const carSessionCount = (sessionGames || []).filter(s => s.game === 'car').length;
+
     // --- Overview card ---
     y = this.drawCard(y, 'OVERVIEW', (cardY) => {
       let cy = cardY;
@@ -251,10 +262,12 @@ export class ParentDashboardScene extends Phaser.Scene {
       this.addContentText(25, cy, `Coins: ${player.coins}`, '#f4a261', '10px');
       cy += 28;
       this.addContentText(25, cy, `Races: ${player.total_races}  Won: ${player.races_won}`, '#1d3557', '10px');
-      cy += 28;
+      cy += 24;
+      this.addContentText(25, cy, `Ski: ${skiSessionCount} · Car: ${carSessionCount}`, '#457b9d', '9px');
+      cy += 24;
       if (player.best_time_ms) {
         const t = (player.best_time_ms / 1000).toFixed(1);
-        this.addContentText(25, cy, `Best Time: ${t}s`, '#2a9d8f', '10px');
+        this.addContentText(25, cy, `Best (ski): ${t}s`, '#2a9d8f', '10px');
         cy += 28;
       }
       return cy;

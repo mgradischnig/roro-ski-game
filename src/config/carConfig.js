@@ -174,11 +174,13 @@ export const CAR_QUALIFIER_REWARDS = {
 };
 export const POLE_POSITION_HEAD_START = 140; // px of AI distance deficit
 
-// Cosmetic car picker roster (M2: headliners; recolors land in M3)
+// Cosmetic car picker roster (M2: headliners; M3 adds the recolors below)
 export const CARS = [
   { key: 'red_rocket', name: 'Red Rocket', texture: 'car_player' },
   { key: 'police', name: 'Police Car', texture: 'car_police' },
   { key: 'f1', name: 'F1 Racer', texture: 'car_f1' },
+  { key: 'green_machine', name: 'Green Machine', texture: 'car_green' },
+  { key: 'pink_lightning', name: 'Pink Lightning', texture: 'car_pink' },
 ];
 
 // Nitro: correct pit-zone answers bank charges; the player fires them

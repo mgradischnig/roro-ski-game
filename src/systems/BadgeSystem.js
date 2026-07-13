@@ -6,19 +6,25 @@ import { supabase } from './SupabaseClient.js';
  */
 const BADGE_DEFINITIONS = [
   // --- Race badges ---
+  // Ski-flavored badges below are gated to the ski game only. Types/names/
+  // icons are UNCHANGED from the pre-M3 shape so already-earned badge rows
+  // stay valid — only the underlying stats they check are now ski-scoped.
   {
     type: 'first_race',
     name: 'First Run',
     description: 'Complete your first race',
     icon: '🎿',
-    check: (stats) => stats.totalRaces >= 1,
+    check: (stats) => stats.skiTotalRaces >= 1,
   },
   {
     type: 'first_win',
     name: 'Winner!',
     description: 'Win your first race',
     icon: '🥇',
-    check: (stats) => stats.racesWon >= 1,
+    // racesWon is the cross-game lifetime player column (no per-game split
+    // exists on players), so this is an approximation: only awardable right
+    // after a ski session, using the lifetime win count as the >=1 check.
+    check: (stats) => stats.lastGame === 'ski' && stats.racesWon >= 1,
   },
   {
     type: 'win_streak_3',
@@ -39,21 +45,21 @@ const BADGE_DEFINITIONS = [
     name: 'Dedicated Skier',
     description: 'Complete 10 races',
     icon: '⛷️',
-    check: (stats) => stats.totalRaces >= 10,
+    check: (stats) => stats.skiTotalRaces >= 10,
   },
   {
     type: 'races_25',
     name: 'Ski Pro',
     description: 'Complete 25 races',
     icon: '🏔️',
-    check: (stats) => stats.totalRaces >= 25,
+    check: (stats) => stats.skiTotalRaces >= 25,
   },
   {
     type: 'clean_run',
     name: 'Clean Run',
     description: 'Finish a race without hitting any obstacles',
     icon: '✨',
-    check: (stats) => stats.lastRaceClean === true,
+    check: (stats) => stats.lastGame === 'ski' && stats.lastRaceClean === true,
   },
   {
     type: 'clean_runs_5',
@@ -151,6 +157,52 @@ const BADGE_DEFINITIONS = [
     description: 'Play 7 days in a row',
     icon: '🗓️',
     check: (stats) => stats.currentDayStreak >= 7,
+  },
+
+  // --- Car badges ---
+  {
+    type: 'first_drive',
+    name: 'First Drive',
+    description: 'Complete your first car race',
+    icon: '🚗',
+    check: (stats) => stats.carTotalRaces >= 1,
+  },
+  {
+    type: 'car_races_10',
+    name: 'Road Tripper',
+    description: 'Complete 10 car races',
+    icon: '🛣️',
+    check: (stats) => stats.carTotalRaces >= 10,
+  },
+  {
+    type: 'car_win_streak_3',
+    name: 'Podium Regular',
+    description: 'Win 3 car races in a row',
+    icon: '🏁',
+    check: (stats) => stats.carWinStreak >= 3,
+  },
+  {
+    type: 'pole_sitter',
+    name: 'Pole Sitter',
+    description: 'Earn pole position in qualifying',
+    icon: '🚦',
+    check: (stats) => stats.lastGame === 'car' && stats.lastQualifierStars >= 4,
+  },
+  {
+    type: 'nitro_master',
+    name: 'Nitro Master',
+    description: 'Fire 3 nitros in one race',
+    icon: '🔥',
+    // 3, not 5 — MAX_CHARGES is 3 and only 3-4 pit zones spawn per race,
+    // so 5-in-one-race is unreachable.
+    check: (stats) => stats.lastGame === 'car' && stats.lastNitroUsed >= 3,
+  },
+  {
+    type: 'traffic_dodger',
+    name: 'Traffic Dodger',
+    description: 'Finish a car race without crashing',
+    icon: '🚕',
+    check: (stats) => stats.lastGame === 'car' && stats.lastRaceClean === true,
   },
 ];
 
@@ -255,10 +307,29 @@ export const BadgeSystem = {
     // Fetch recent sessions for win streak calculation
     const { data: recentSessions } = await supabase
       .from('sessions')
-      .select('finish_position, clean_run')
+      .select('finish_position, clean_run, game')
       .eq('player_id', playerId)
       .order('played_at', { ascending: false })
       .limit(20);
+
+    // Lifetime per-game race counts — the 20-row recentSessions window
+    // above isn't enough to check races_10/25 (or car_races_10) once a
+    // player has mixed ski/car history. Historic rows were backfilled with
+    // game='ski', but treat NULL as ski too (belt and braces): supabase-js
+    // v2 .or() ORs its own conditions while still ANDing with the .eq()
+    // filters already on the builder, giving us
+    //   player_id = X AND (game = 'ski' OR game IS NULL)
+    const { count: skiTotalRaces } = await supabase
+      .from('sessions')
+      .select('*', { count: 'exact', head: true })
+      .eq('player_id', playerId)
+      .or('game.eq.ski,game.is.null');
+
+    const { count: carTotalRaces } = await supabase
+      .from('sessions')
+      .select('*', { count: 'exact', head: true })
+      .eq('player_id', playerId)
+      .eq('game', 'car');
 
     // Fetch total math correct from question_responses
     const { count: totalMathCorrect } = await supabase
@@ -285,20 +356,27 @@ export const BadgeSystem = {
 
     // --- Compute derived stats ---
 
-    // Current win streak (count consecutive 1st places from most recent)
+    // Split the recent-sessions window by game (null game = historic ski row)
+    const skiSessions = (recentSessions || []).filter(s => s.game !== 'car');
+    const carSessions = (recentSessions || []).filter(s => s.game === 'car');
+
+    // Current win streak (count consecutive 1st places from most recent),
+    // computed per-game so a car loss doesn't reset a ski streak or vice versa.
     let currentWinStreak = 0;
-    if (recentSessions) {
-      for (const s of recentSessions) {
-        if (s.finish_position === 1) currentWinStreak++;
-        else break;
-      }
+    for (const s of skiSessions) {
+      if (s.finish_position === 1) currentWinStreak++;
+      else break;
     }
 
-    // Total clean runs
-    let totalCleanRuns = 0;
-    if (recentSessions) {
-      totalCleanRuns = recentSessions.filter(s => s.clean_run).length;
+    let carWinStreak = 0;
+    for (const s of carSessions) {
+      if (s.finish_position === 1) carWinStreak++;
+      else break;
     }
+
+    // Total clean runs (ski) and car clean runs, within the recent window
+    const totalCleanRuns = skiSessions.filter(s => s.clean_run).length;
+    const carCleanRuns = carSessions.filter(s => s.clean_run).length;
 
     // Best math streak (consecutive correct)
     let bestMathStreak = 0;
@@ -337,17 +415,27 @@ export const BadgeSystem = {
     }
 
     return {
-      // Player stats
+      // Player stats (cross-game lifetime columns — leave as-is)
       totalRaces: player?.total_races || 0,
       racesWon: player?.races_won || 0,
 
       // Current session
       lastRaceClean: sessionData.clean_run || false,
       lastQualifierStars: sessionData.qualifier_stars || 0,
+      lastGame: sessionData.game || 'ski',
+      lastNitroUsed: sessionData.nitro_used || 0,
 
-      // Aggregated
+      // Aggregated — ski
+      skiTotalRaces: skiTotalRaces || 0,
       currentWinStreak,
       totalCleanRuns,
+
+      // Aggregated — car
+      carTotalRaces: carTotalRaces || 0,
+      carWinStreak,
+      carCleanRuns,
+
+      // Aggregated — shared
       totalMathCorrect: totalMathCorrect || 0,
       bestMathStreak,
       masteredTiers,
