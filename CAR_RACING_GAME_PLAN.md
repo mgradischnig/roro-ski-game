@@ -146,10 +146,18 @@ Each track = one entry in a `TRACK_THEMES` config, exactly like
 
 3×3 track picker on the qualifier results screen, same as the world picker.
 
-### 3.9 Cars (cosmetic, Phase 3)
+### 3.9 Cars (cosmetic picker — promoted to M2, Rohan's picks lead)
 
-A car picker like the avatar system: **Red Rocket, Blue Bolt, Green Machine,
-Pink Lightning** — purely cosmetic recolors of the player car texture.
+A car picker like the avatar system, purely cosmetic. Headliners chosen for
+Rohan:
+
+- **Police Car** — white/black body, red-and-blue roof light bar with a
+  gentle flicker animation (a tween on two small rects; cheap and delightful)
+- **F1 Racer** — open-wheel single-seater silhouette in a Red Bull–style
+  navy body with red/yellow nose accents (livery-inspired, no logos)
+
+Plus simple recolors to round out the garage: **Red Rocket, Green Machine,
+Pink Lightning**.
 
 ### 3.10 HUD
 
@@ -212,20 +220,23 @@ weeks for little gain.
 | Milestone | Scope | Outcome |
 |---|---|---|
 | **M1 — First drivable race** | GameSelect scene, CarRaceScene on Grand Prix track, cones + moving traffic, crash slowdown, 3 rivals, finish + podium. Qualifier reused as-is | Rohan can race a car end-to-end |
-| **M2 — Math under the hood** | Pit zones → nitro charges + NITRO button, qualifier reskin + pole-position reward, 4 tracks | The signature mechanic lands |
-| **M3 — Full garage** | All 8 tracks, car picker, car badges, oil-slick spin, S-curved road, dashboard split | Feature parity with ski + car-native extras |
+| **M2 — Math under the hood** | Pit zones → nitro charges + NITRO button, qualifier reskin + pole-position/armor rewards, car picker with Police Car + F1 Racer, 4 tracks | The signature mechanic and Rohan's cars land |
+| **M3 — Full garage** | All 8 tracks, remaining cars, car badges, oil-slick spin, S-curved road, dashboard split | Feature parity with ski + car-native extras |
 | **M4 — Polish (stretch)** | Synthesized SFX, drift particles, 3-race Championship Cup with points | Long-term replay value |
 
 M1 and M2 are each roughly one focused working session given how much code
 transfers from `RaceScene`.
 
-## 7. Open questions
+## 7. Decisions (settled 2026-07-13)
 
-1. **One app, two games** (recommended) — or would you rather have a separate
-   app/repo for the car game?
-2. **Nitro button**: is a second input OK for Rohan, or should boosts stay
-   automatic like ski? (Config flag either way.)
-3. **Qualifier reward**: pole-position head start, bumper armor, or both?
-4. **Rohan's taste**: any must-haves — monster trucks, police cars, F1,
-   specific colors? Cheap to add as car skins / a track.
-5. **Shared wallet**: coins and badges pooled across both games, or per-game?
+1. **One app, two games** — confirmed. Game Select screen after player select.
+2. **Nitro button** — confirmed. Pit-zone math awards charges, the player
+   fires them with the NITRO button. (Config flag for auto-boost fallback
+   stays in the code but off.)
+3. **Qualifier reward** — both: 4–5 stars = pole-position head start,
+   5 stars additionally = bumper armor.
+4. **Cars** — police car and a Red Bull–style F1 racer are the headliners,
+   pulled forward into M2 (see 3.9).
+5. **Shared wallet** — one coin balance and one badge collection across both
+   games (badge *types* stay game-flavored). Zero schema change: coins
+   already live on the player record.
