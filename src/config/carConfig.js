@@ -80,6 +80,14 @@ export const TRACK_THEMES = {
 
 export const TRACK_THEME_KEYS = Object.keys(TRACK_THEMES);
 
+// Nitro: correct pit-zone answers bank charges; the player fires them
+// with the NITRO button whenever they choose.
+export const NITRO = {
+  MAX_CHARGES: 3,
+  BOOST_MS: 2500,          // flame window duration
+  INVINCIBLE: true,        // crash-proof while the flame is on (config-flag fallback: false)
+};
+
 /**
  * AI opponent racer configurations.
  * Mirrors AI_SKIERS in src/config/gameConfig.js — same personalities,

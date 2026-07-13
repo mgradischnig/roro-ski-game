@@ -41,15 +41,18 @@ export class TouchButton {
       color: textColor,
     }).setOrigin(0.5).setDepth(depth + 1);
 
-    // Tap feedback
-    this.bg.on('pointerdown', () => {
+    // Tap feedback — stopPropagation so the button press never reaches
+    // scene-level pointer handlers (e.g. steering in CarRaceScene).
+    this.bg.on('pointerdown', (pointer, localX, localY, event) => {
       this.bg.setScale(0.95);
       this.label.setScale(0.95);
+      event.stopPropagation();
     });
-    this.bg.on('pointerup', () => {
+    this.bg.on('pointerup', (pointer, localX, localY, event) => {
       this.bg.setScale(1);
       this.label.setScale(1);
       if (onClick) onClick();
+      event.stopPropagation();
     });
     this.bg.on('pointerout', () => {
       this.bg.setScale(1);

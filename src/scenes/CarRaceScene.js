@@ -1,6 +1,7 @@
 // Forked from RaceScene (ski). Intentional divergences: mirrored scroll
 // direction, bottom-anchored player on scale.height, traffic hazards with
-// own speed, no in-race math zones yet (pit zones land in M2).
+// own speed, and pit zones (M2) that bank nitro charges instead of
+// granting an immediate boost — fired on demand via the NITRO button.
 import Phaser from 'phaser';
 import {
   GAME_WIDTH,
@@ -12,9 +13,13 @@ import {
 } from '../config/gameConfig.js';
 import {
   CAR_TIER_DIFFICULTY, TRAFFIC_SPEED_RATIO, CAR_GEOMETRY, CAR_PLAYER_BOTTOM_OFFSET,
-  TRACK_THEMES, TRACK_THEME_KEYS, AI_RACERS,
+  TRACK_THEMES, TRACK_THEME_KEYS, AI_RACERS, NITRO,
 } from '../config/carConfig.js';
 import { AIController } from '../systems/AIController.js';
+import { MathEngine } from '../systems/MathEngine.js';
+import { MathPopup } from '../ui/MathPopup.js';
+import { TouchButton } from '../ui/TouchButton.js';
+import { RACE_MATH, COINS } from '../config/mathConfig.js';
 
 export class CarRaceScene extends Phaser.Scene {
   constructor() {
@@ -43,6 +48,7 @@ export class CarRaceScene extends Phaser.Scene {
     const tierDiff = CAR_TIER_DIFFICULTY[this.playerTier] || CAR_TIER_DIFFICULTY[2];
     this.tierScrollSpeed = tierDiff.baseScrollSpeed;
     this.tierMaxCleanSpeed = tierDiff.maxCleanSpeed;
+    this.tierBoostSpeed = tierDiff.boostScrollSpeed;
     this.tierRaceDistance = tierDiff.raceDistance;
     this.tierMaxObstacles = tierDiff.maxObstaclesPerSpawn;
     this.tierAIBaseSpeed = tierDiff.baseScrollSpeed * tierDiff.aiSpeedScale;
@@ -58,6 +64,24 @@ export class CarRaceScene extends Phaser.Scene {
     this.playerFinishTime = 0;
     this.currentPosition = 1;   // Player's current race position
     this.shieldActive = this.hasShield;
+
+    // --- Nitro / pit-zone math state ---
+    this.nitroCharges = 0;
+    this.nitroActive = false;
+    this.nitroUsed = 0;
+    this.mathPaused = false;
+    this.mathPopup = null;
+    this.mathCorrectInRace = 0;
+    this.mathTotalInRace = 0;
+    this.raceQuestionResponses = [];
+    this.raceCoins = 0;
+    this.pitZoneTriggers = MathEngine.generateRaceTriggers(
+      this.tierRaceDistance,
+      Phaser.Math.Between(RACE_MATH.ZONE_COUNT_MIN, RACE_MATH.ZONE_COUNT_MAX),
+      RACE_MATH.MARGIN_START,
+      RACE_MATH.MARGIN_END
+    );
+    this.nextPitZoneIndex = 0;
 
     // --- Bottom-anchored player position (canvas height varies in PWA mode) ---
     const H = this.scale.height;
@@ -83,6 +107,9 @@ export class CarRaceScene extends Phaser.Scene {
       callbackScope: this,
       loop: true,
     });
+
+    // --- Pit zones (math questions that bank nitro charges) ---
+    this.pitZones = this.physics.add.group();
 
     // --- Finish line ---
     this.finishLineSpawned = false;
@@ -111,19 +138,50 @@ export class CarRaceScene extends Phaser.Scene {
     // --- Collision: player vs obstacles/traffic ---
     this.physics.add.overlap(this.player, this.obstacles, this.hitObstacle, null, this);
 
+    // --- Collision: player vs pit zones ---
+    this.physics.add.overlap(this.player, this.pitZones, this.enterPitZone, null, this);
+
     // --- Input: Keyboard ---
     this.cursors = this.input.keyboard.createCursorKeys();
-
-    // --- Input: Touch ---
-    this.touchDirection = 0;
-    this.input.on('pointerdown', (pointer) => this.handleTouch(pointer, true));
-    this.input.on('pointermove', (pointer) => {
-      if (pointer.isDown) this.handleTouch(pointer, true);
+    const fireNitroHandler = () => this.fireNitro();
+    this.input.keyboard.on('keydown-SPACE', fireNitroHandler);
+    this.events.once('shutdown', () => {
+      this.input.keyboard.off('keydown-SPACE', fireNitroHandler);
     });
-    this.input.on('pointerup', () => { this.touchDirection = 0; });
+
+    // --- Input: Touch (pointer-id aware so the NITRO button never steers) ---
+    this.touchDirection = 0;
+    this.steeringPointerId = null;
+    this.input.on('pointerdown', (pointer) => {
+      if (this.steeringPointerId !== null) return;
+      const dir = this.getTouchDirection(pointer);
+      if (dir !== 0) {
+        this.steeringPointerId = pointer.id;
+        this.touchDirection = dir;
+      }
+    });
+    this.input.on('pointermove', (pointer) => {
+      if (pointer.id !== this.steeringPointerId) return;
+      this.touchDirection = this.getTouchDirection(pointer);
+    });
+    this.input.on('pointerup', (pointer) => {
+      if (pointer.id !== this.steeringPointerId) return;
+      this.touchDirection = 0;
+      this.steeringPointerId = null;
+    });
 
     // --- HUD ---
     this.createHUD();
+
+    // --- NITRO button ---
+    this.nitroButton = new TouchButton(this, GAME_WIDTH / 2, H - 52 - (window.SAFE_AREA_BOTTOM || 0), 'NITRO', {
+      width: 140,
+      height: 60,
+      bgColor: 0xe76f51,
+      fontSize: '16px',
+      depth: 21,
+      onClick: () => this.fireNitro(),
+    });
 
     // --- Results tracking ---
     this.finishResults = [];   // Array of { name, time, isPlayer }
@@ -328,10 +386,151 @@ export class CarRaceScene extends Phaser.Scene {
   }
 
   // =====================
+  // PIT ZONES (math questions that bank nitro charges)
+  // =====================
+  spawnPitZone() {
+    // Pick a random X position (left/center/right), same lanes as obstacles
+    const lanes = [
+      OBSTACLE_MARGIN + 40,                    // left
+      GAME_WIDTH / 2,                           // center
+      GAME_WIDTH - OBSTACLE_MARGIN - 40,        // right
+    ];
+    const x = Phaser.Math.RND.pick(lanes);
+
+    const zone = this.pitZones.create(x, -40, 'pit_zone');
+    zone.setScale(1.2);
+    zone.body.setImmovable(true);
+    zone.body.setAllowGravity(false);
+    zone.setDepth(6);
+    zone.body.setSize(RACE_MATH.ZONE_WIDTH * 0.8, RACE_MATH.ZONE_HEIGHT * 0.8);
+    zone.setData('speedFactor', 1);
+
+    // Gentle pulse animation to make it inviting
+    this.tweens.add({
+      targets: zone,
+      scaleX: { from: 1.15, to: 1.3 },
+      scaleY: { from: 1.15, to: 1.3 },
+      alpha: { from: 0.7, to: 1.0 },
+      duration: 600,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
+    this.nextPitZoneIndex++;
+  }
+
+  enterPitZone(player, zone) {
+    if (this.mathPaused || this.raceFinished) return;
+
+    // Destroy the zone (one-time use)
+    zone.destroy();
+
+    // Trigger math question
+    this.mathPaused = true;
+    this.mathTotalInRace++;
+
+    const question = MathEngine.generateQuestion(
+      this.playerTier, 'in_race', this.raceQuestionResponses
+    );
+
+    this.mathPopup = new MathPopup(this, question, (result) => {
+      this.handlePitAnswer(result, question);
+    }, {
+      noPenalty: true,
+      timerMs: RACE_MATH.ZONE_TIMER,
+    });
+  }
+
+  handlePitAnswer(result, question) {
+    this.mathPaused = false;
+    this.mathPopup = null;
+
+    // Record response (same field shape ski uses for 'in_race')
+    this.raceQuestionResponses.push({
+      player_id: this.playerId,
+      context: 'in_race',
+      tier: question.tier,
+      target_number: question.target,
+      format: question.format,
+      question_text: question.questionText,
+      correct_answer: String(question.correctAnswer),
+      player_answer: result.playerAnswer !== null ? String(result.playerAnswer) : null,
+      is_correct: result.isCorrect,
+      response_time_ms: result.responseTimeMs,
+      hint_used: false,
+      hint_level: 0,
+      visual_aid_shown: false,
+    });
+
+    if (result.isCorrect) {
+      this.mathCorrectInRace++;
+      this.raceCoins += COINS.RACE_CORRECT;
+      this.nitroCharges = Math.min(this.nitroCharges + 1, NITRO.MAX_CHARGES);
+
+      // Visual feedback — teal flash + floating "+NITRO!" text
+      this.cameras.main.flash(200, 42, 157, 143, false);
+
+      const nitroText = this.add.text(this.player.x, this.player.y - 20, '+NITRO!', {
+        fontSize: '12px',
+        fontFamily: '"Press Start 2P", monospace',
+        color: '#2a9d8f',
+        stroke: '#ffffff',
+        strokeThickness: 2,
+      }).setOrigin(0.5).setDepth(25);
+
+      this.tweens.add({
+        targets: nitroText,
+        y: nitroText.y - 50,
+        alpha: 0,
+        duration: 1000,
+        ease: 'Cubic.easeOut',
+        onComplete: () => nitroText.destroy(),
+      });
+    } else {
+      // NO penalty — just resume at current speed
+      // The correct answer was already shown by the MathPopup
+    }
+  }
+
+  // =====================
+  // NITRO
+  // =====================
+  fireNitro() {
+    if (this.raceFinished || this.mathPaused || this.nitroActive || this.nitroCharges === 0) return;
+
+    this.nitroCharges--;
+    this.nitroUsed++;
+    this.nitroActive = true;
+    this.targetSpeed = this.tierBoostSpeed;
+    this.scrollSpeed = this.tierBoostSpeed;
+
+    // Orange camera flash
+    this.cameras.main.flash(200, 255, 140, 34, false);
+
+    this.time.delayedCall(NITRO.BOOST_MS, () => {
+      this.nitroActive = false;
+      this.targetSpeed = this.tierScrollSpeed;
+    });
+  }
+
+  // =====================
   // COLLISION
   // =====================
   hitObstacle(player, obstacle) {
     if (this.isHit || this.raceFinished) return;
+
+    // Nitro invincibility: drive straight through, no penalty
+    if (NITRO.INVINCIBLE && this.nitroActive) {
+      obstacle.body.enable = false;
+      this.tweens.add({
+        targets: obstacle,
+        alpha: 0,
+        duration: 150,
+        onComplete: () => obstacle.destroy(),
+      });
+      return;
+    }
 
     // Shield absorbs first hit
     if (this.shieldActive) {
@@ -457,22 +656,18 @@ export class CarRaceScene extends Phaser.Scene {
   // =====================
   // TOUCH INPUT
   // =====================
-  handleTouch(pointer, isDown) {
-    if (!isDown || this.raceFinished) {
-      this.touchDirection = 0;
-      return;
-    }
+  // Pointer-id aware: returns a direction without mutating state, so the
+  // caller (pointerdown/pointermove handlers) can decide whether this
+  // pointer owns steering. Keeps the NITRO button's pointer independent.
+  getTouchDirection(pointer) {
+    if (this.raceFinished) return 0;
 
     const gameX = (pointer.x - this.scale.canvasBounds.left) / this.scale.displayScale.x;
     const relativeX = gameX / GAME_WIDTH;
 
-    if (relativeX < TOUCH_ZONE_LEFT) {
-      this.touchDirection = -1;
-    } else if (relativeX > TOUCH_ZONE_RIGHT) {
-      this.touchDirection = 1;
-    } else {
-      this.touchDirection = 0;
-    }
+    if (relativeX < TOUCH_ZONE_LEFT) return -1;
+    if (relativeX > TOUCH_ZONE_RIGHT) return 1;
+    return 0;
   }
 
   // =====================
@@ -522,6 +717,16 @@ export class CarRaceScene extends Phaser.Scene {
       stroke: '#ffffff',
       strokeThickness: 3,
     }).setOrigin(0, 0).setDepth(20);
+
+    // Nitro charge icons (flames), under the position text
+    this.flameIcons = [];
+    for (let i = 0; i < NITRO.MAX_CHARGES; i++) {
+      const flame = this.add.image(20 + i * 22, this.positionText.y + 34, 'flame');
+      flame.setScale(1.6);
+      flame.setDepth(20);
+      flame.setAlpha(0.18);
+      this.flameIcons.push(flame);
+    }
 
     // Speed lines container (visual feedback for fast driving)
     this.speedLines = this.add.group();
@@ -591,6 +796,9 @@ export class CarRaceScene extends Phaser.Scene {
     const posIndex = Math.min(this.currentPosition - 1, 3);
     this.positionText.setText(posLabels[posIndex]);
     this.positionText.setColor(posColors[posIndex]);
+
+    // Nitro charge icons
+    this.flameIcons.forEach((f, i) => f.setAlpha(i < this.nitroCharges ? 1 : 0.18));
   }
 
   // =====================
@@ -783,12 +991,13 @@ export class CarRaceScene extends Phaser.Scene {
         playerName: this.playerName,
         tier: this.playerTier,
         qualifierStars: this.qualifierStars,
-        mathCorrectInRace: 0,
-        mathTotalInRace: 0,
+        mathCorrectInRace: this.mathCorrectInRace,
+        mathTotalInRace: this.mathTotalInRace,
         qualifierResponses: this.qualifierResponses,
-        raceResponses: [],
+        raceResponses: this.raceQuestionResponses,
         qualifierCoins: this.qualifierCoins,
-        raceCoins: 0,
+        raceCoins: this.raceCoins,
+        nitroUsed: this.nitroUsed,
         game: this.gameMode,
       });
     });
@@ -852,13 +1061,15 @@ export class CarRaceScene extends Phaser.Scene {
     const dt = delta / 1000;
     const H = this.scale.height;
 
-    // --- Race timer ---
-    if (!this.raceFinished) {
+    // --- Race timer (paused during math popup) ---
+    if (!this.raceFinished && !this.mathPaused) {
       this.raceTime += delta;
     }
 
     // --- Clean driving bonus: gradually speed up when not hitting obstacles ---
-    if (!this.isHit && !this.raceFinished) {
+    // Skipped while nitro burns: the clamp to tierMaxCleanSpeed would pull the
+    // boost speed back down one frame after firing, gutting the flame window.
+    if (!this.isHit && !this.raceFinished && !this.nitroActive) {
       this.targetSpeed = Math.min(this.targetSpeed + CLEAN_SKIING_ACCEL * dt, this.tierMaxCleanSpeed);
     }
 
@@ -909,8 +1120,10 @@ export class CarRaceScene extends Phaser.Scene {
     }
 
     // --- Update AI rivals (independent speed, rubber-banded) ---
+    // Freeze AI during math popup so the player isn't punished for answering
+    const aiDt = this.mathPaused ? 0 : dt;
     this.aiControllers.forEach(ai => {
-      ai.update(dt, time, this.obstacles, this.distanceTraveled);
+      ai.update(aiDt, time, this.obstacles, this.distanceTraveled);
 
       // Update AI sprite Y position based on relative distance
       const screenY = ai.getScreenY(this.distanceTraveled);
@@ -934,6 +1147,40 @@ export class CarRaceScene extends Phaser.Scene {
     // --- Skid marks ---
     if (time % 3 < 1) {
       this.spawnSkidMarks();
+    }
+
+    // --- Nitro flame trail ---
+    if (this.nitroActive && !this.raceFinished) {
+      const flame = this.add.image(
+        this.player.x + Phaser.Math.Between(-4, 4), this.player.y + 26, 'flame'
+      );
+      flame.setScale(Phaser.Math.FloatBetween(1.5, 2.5));
+      flame.setDepth(8);
+      this.tweens.add({
+        targets: flame,
+        y: flame.y + 30,
+        alpha: 0,
+        duration: 300,
+        onComplete: () => flame.destroy(),
+      });
+    }
+
+    // --- Spawn pit zones when distance thresholds are reached ---
+    if (!this.raceFinished && !this.mathPaused &&
+        this.nextPitZoneIndex < this.pitZoneTriggers.length &&
+        this.distanceTraveled >= this.pitZoneTriggers[this.nextPitZoneIndex]) {
+      this.spawnPitZone();
+    }
+
+    // --- Scroll pit zones DOWN with the road ---
+    this.pitZones.getChildren().forEach(zone => {
+      zone.y += scrollDelta * (zone.getData('speedFactor') || 1);
+      if (zone.y > H + 80) zone.destroy();
+    });
+
+    // --- Hold speed during math popup (gentle 40% roll, not a compounding pause) ---
+    if (this.mathPaused) {
+      this.scrollSpeed = this.tierScrollSpeed * 0.4;
     }
 
     // --- HUD ---

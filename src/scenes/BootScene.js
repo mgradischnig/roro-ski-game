@@ -771,5 +771,38 @@ export class BootScene extends Phaser.Scene {
       gfx.fillStyle(0xff6b9d, 0.9);
       gfx.fillRect(2, 2, 4, 4);
     });
+
+    // Pit zone — glowing amber rectangle with a wrench icon (nitro reward zone)
+    g('pit_zone', 80, 60, gfx => {
+      const zoneW = 80;
+      const zoneH = 60;
+      // Outer glow (soft edge)
+      gfx.fillStyle(0xffdd57, 0.15);
+      gfx.fillRoundedRect(0, 0, zoneW, zoneH, 10);
+      // Inner fill
+      gfx.fillStyle(0xffdd57, 0.35);
+      gfx.fillRoundedRect(4, 4, zoneW - 8, zoneH - 8, 8);
+      // Border
+      gfx.lineStyle(2, 0xffaa22, 0.8);
+      gfx.strokeRoundedRect(4, 4, zoneW - 8, zoneH - 8, 8);
+      // Wrench icon in center (white): open C-shape head + handle bar
+      gfx.fillStyle(0xffffff, 0.9);
+      gfx.fillRect(30, 10, 20, 5);   // head top bar
+      gfx.fillRect(30, 10, 5, 16);   // head left bar
+      gfx.fillRect(30, 21, 20, 5);   // head bottom bar (open on the right)
+      gfx.fillRect(37, 26, 6, 24);   // vertical handle bar
+    });
+
+    // Flame — teardrop nitro flame, narrowing to a tip upward
+    g('flame', 10, 14, gfx => {
+      // Outer flame body (orange)
+      gfx.fillStyle(0xff6622, 1);
+      gfx.fillEllipse(5, 8, 8, 10);
+      gfx.fillTriangle(5, 0, 2, 6, 8, 6);
+      // Inner flame (yellow), smaller
+      gfx.fillStyle(0xffdd57, 1);
+      gfx.fillEllipse(5, 9, 4, 5);
+      gfx.fillTriangle(5, 3, 3.5, 7, 6.5, 7);
+    });
   }
 }
