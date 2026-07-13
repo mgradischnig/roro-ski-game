@@ -9,8 +9,9 @@ import {
   TOUCH_ZONE_LEFT, TOUCH_ZONE_RIGHT,
   COLORS, TIER_DIFFICULTY,
   SLOPE_THEMES, SLOPE_THEME_KEYS,
+  AI_SKIERS,
 } from '../config/gameConfig.js';
-import { AIController, AI_SKIERS } from '../systems/AIController.js';
+import { AIController } from '../systems/AIController.js';
 import { MathEngine } from '../systems/MathEngine.js';
 import { MathPopup } from '../ui/MathPopup.js';
 import { RACE_MATH, COINS } from '../config/mathConfig.js';
