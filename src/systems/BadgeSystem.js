@@ -204,6 +204,13 @@ const BADGE_DEFINITIONS = [
     icon: '🚕',
     check: (stats) => stats.lastGame === 'car' && stats.lastRaceClean === true,
   },
+  {
+    type: 'cup_champion',
+    name: 'Cup Champion',
+    description: 'Win a 3-race Championship Cup',
+    icon: '🏆',
+    check: (stats) => stats.cupWon === true,
+  },
 ];
 
 /**
@@ -424,6 +431,7 @@ export const BadgeSystem = {
       lastQualifierStars: sessionData.qualifier_stars || 0,
       lastGame: sessionData.game || 'ski',
       lastNitroUsed: sessionData.nitro_used || 0,
+      cupWon: sessionData.cup_won || false,
 
       // Aggregated — ski
       skiTotalRaces: skiTotalRaces || 0,

@@ -160,6 +160,14 @@ export const TRACK_THEMES = {
 
 export const TRACK_THEME_KEYS = Object.keys(TRACK_THEMES);
 
+// Championship Cup: every 3 car races form a cup. F1-style points by
+// finish position; the champion gets a celebration + bonus coins.
+export const CHAMPIONSHIP = {
+  RACES: 3,
+  POINTS: [10, 6, 4, 2],   // 1st..4th
+  WINNER_COINS: 10,
+};
+
 // Qualifier rewards for the car game: 4-5 stars = pole position
 // (head start), 5 stars additionally = bumper armor (the ski shield,
 // renamed). Head start must stay <= RUBBER_BAND_DEAD_ZONE (150) or the
