@@ -17,6 +17,7 @@ import {
   CORRIDOR_HALF_WIDTH, roadCenterAt, SPIN_HAZARDS, OIL_SPAWN_CHANCE,
 } from '../config/carConfig.js';
 import { AIController } from '../systems/AIController.js';
+import { SoundFX } from '../systems/SoundFX.js';
 import { MathEngine } from '../systems/MathEngine.js';
 import { MathPopup } from '../ui/MathPopup.js';
 import { TouchButton } from '../ui/TouchButton.js';
@@ -69,6 +70,12 @@ export class CarRaceScene extends Phaser.Scene {
     this.playerFinishTime = 0;
     this.currentPosition = 1;   // Player's current race position
     this.shieldActive = this.hasShield;
+
+    // --- Sound FX (synthesized WebAudio, M4 stretch) ---
+    this.sfx = new SoundFX(this);
+    this.events.once('shutdown', () => this.sfx.destroy());
+    this._lastMoveDir = 0;
+    this._lastDriftAt = 0;
 
     // --- Nitro / pit-zone math state ---
     this.nitroCharges = 0;
@@ -562,6 +569,8 @@ export class CarRaceScene extends Phaser.Scene {
     this.targetSpeed = this.tierBoostSpeed;
     this.scrollSpeed = this.tierBoostSpeed;
 
+    this.sfx.nitroWhoosh();
+
     // Orange camera flash
     this.cameras.main.flash(200, 255, 140, 34, false);
 
@@ -590,6 +599,7 @@ export class CarRaceScene extends Phaser.Scene {
       if (this.isSpinning || this.time.now < (this._spinCooldownUntil || 0)) return;
       this._spinCooldownUntil = this.time.now + 1600;
 
+      this.sfx.spinWhee();
       this.isSpinning = true;
       this.tweens.add({
         targets: this.player,
@@ -658,9 +668,11 @@ export class CarRaceScene extends Phaser.Scene {
       this.shieldActive = false;
       obstacle.destroy();
       this.cameras.main.flash(200, 42, 157, 200, false); // blue flash
+      this.sfx.skid();
       return;
     }
 
+    this.sfx.crash();
     this.isHit = true;
     this.obstaclesHit++;
 
@@ -985,6 +997,7 @@ export class CarRaceScene extends Phaser.Scene {
           this.raceStarted = true;
           this.scrollSpeed = this.tierScrollSpeed;
           this.targetSpeed = this.tierScrollSpeed;
+          this.sfx.startEngine();
           this.tweens.add({
             targets: countText,
             alpha: 0,
@@ -1057,6 +1070,7 @@ export class CarRaceScene extends Phaser.Scene {
     this.targetSpeed = 0;
     this.obstacleTimer.remove();
     this.trafficTimer.remove();
+    this.sfx.stopEngine();
 
     const H = this.scale.height;
 
@@ -1187,6 +1201,9 @@ export class CarRaceScene extends Phaser.Scene {
       this.raceTime += delta;
     }
 
+    // --- Engine pitch follows current speed ---
+    this.sfx.setEngineSpeed(Phaser.Math.Clamp((this.scrollSpeed - 40) / (this.tierBoostSpeed - 40), 0, 1));
+
     // --- Clean driving bonus: gradually speed up when not hitting obstacles ---
     // Skipped while nitro burns: the clamp to tierMaxCleanSpeed would pull the
     // boost speed back down one frame after firing, gutting the flame window.
@@ -1264,6 +1281,14 @@ export class CarRaceScene extends Phaser.Scene {
     else if (this.cursors.right.isDown) moveDir = 1;
     if (this.touchDirection !== 0) moveDir = this.touchDirection;
 
+    // Steering skid: a fresh turn (sign flip, or starting from neutral) at
+    // speed gets an audible chirp. SoundFX throttles internally.
+    if (moveDir !== this._lastMoveDir && moveDir !== 0 &&
+        this.scrollSpeed > 0.85 * this.tierMaxCleanSpeed) {
+      this.sfx.skid();
+    }
+    this._lastMoveDir = moveDir;
+
     if (!this.raceFinished) {
       // Spinning (oil slick) scrambles steering but doesn't kill it, and the
       // spin tween owns player.angle while it's playing — don't fight it.
@@ -1276,6 +1301,25 @@ export class CarRaceScene extends Phaser.Scene {
     // --- Player clamp follows the S-curve at the player's row ---
     const pc = roadCenterAt(Math.max(0, this.distanceTraveled - this.playerY));
     this.player.x = Phaser.Math.Clamp(this.player.x, pc - CORRIDOR_HALF_WIDTH + 14, pc + CORRIDOR_HALF_WIDTH - 14);
+
+    // --- Drift smoke puffs (rear-outside wheel, while turning at speed) ---
+    if (moveDir !== 0 && this.scrollSpeed > 0.8 * this.tierMaxCleanSpeed && !this.isSpinning &&
+        time - this._lastDriftAt >= 90) {
+      this._lastDriftAt = time;
+      const puff = this.add.circle(
+        this.player.x - moveDir * 9, this.player.y + 22,
+        Phaser.Math.Between(2, 4), 0xdddddd, 0.5
+      );
+      puff.setDepth(8);
+      this.tweens.add({
+        targets: puff,
+        y: puff.y + 24,
+        alpha: 0,
+        scale: 2,
+        duration: 350,
+        onComplete: () => puff.destroy(),
+      });
+    }
 
     // --- Update AI rivals (independent speed, rubber-banded) ---
     // Freeze AI during math popup so the player isn't punished for answering
