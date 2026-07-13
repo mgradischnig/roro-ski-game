@@ -101,17 +101,25 @@ Nitro below.
 
 | Hazard | Behavior | Effect on player |
 |---|---|---|
-| **Traffic car** | *Moves!* Scrolls down slower than road speed (it's driving too), so you overtake it; some drift sideways slowly | Big slowdown on crash (like ski tree) |
+| **Traffic car** | *Moves!* Scrolls down slower than road speed (it's driving too), so you overtake it; some drift sideways slowly — telegraphed with a blinker flash so it never feels like the car attacked the player | Big slowdown on crash (like ski tree) |
 | **Cone / barrier** | Static | Small slowdown |
-| **Oil slick** | Static, flat | No slowdown — car does a full 360° spin tween and steering is scrambled for ~0.8s. Funny, not punishing |
+| **Oil slick** | Static, flat | No slowdown — car does a full 360° spin tween and steering is scrambled for ~0.8s. Funny, not punishing. The spin gets its own re-trigger guard (like `isHit`) and does **not** consume Bumper Armor |
 | **Theme hazards** | Per track (ice patch, beach ball, tumbleweed…) | Reuse one of the above behaviors |
 
 Traffic cars reuse the obstacle group with a per-sprite scroll rate
 (`setData('ownSpeed')`), and the collision handler switches on a
 `hazardType` data value (big slowdown / small slowdown / spin) instead of
 applying one effect to everything. A few lines, not one, but still small;
-despawn checks flip direction (hazards exit past the bottom). Density/speed
-scale with the existing per-tier difficulty table.
+despawn checks flip direction (hazards exit past the bottom).
+
+Density needs its own budget for traffic (adversarial catch): a static cone
+crosses the screen in ~4–5 s at race scroll speed, but a traffic car moves
+at its *relative* speed — at ~40% slower than the player it lingers on
+screen roughly 3× longer. Reusing the ski `obstacleSpawnInterval` unchanged
+would stack 2–3× more simultaneous hazards than any ski tier ever shows.
+Give traffic its own (slower) spawn cadence in the car difficulty table,
+tuned by on-screen count, not spawn rate; static hazards can keep the ski
+cadence.
 
 ### 3.5 Nitro — math becomes a choice (signature mechanic)
 
@@ -137,6 +145,13 @@ pointer-id aware — currently *any* `pointerup` zeroes steering, so releasing
 the NITRO thumb would stop the player steering mid-corner, and (c) place the
 button in the neutral middle strip (the center 20% between the touch zones)
 and have it consume its pointer so pressing it never also steers.
+
+Recommendation from adversarial review (needs sign-off): make the ~2.5 s
+flame window crash-proof. Without it, firing nitro into traffic cancels the
+boost instantly — "I did the math, pressed the button, and still crashed"
+is exactly the frustration the no-penalty philosophy exists to avoid. With
+a max of 2–3 charges per race, a short invincible flame won't break
+balance, and it makes the button feel incredible.
 
 ### 3.6 Qualifier reward: grid position
 
@@ -192,8 +207,11 @@ single biggest BootScene work item. Five tracks map straight onto existing
 ski themes — Snowy Pass (snow), Desert Rally (desert), Mars Highway (mars),
 Volcano Road (lava), Jungle Road (coconut/forest) — so reuse their
 `edgeDeco` and `particle` textures verbatim and only draw the new road
-obstacles. Only Grand Prix, City Night, and Coastal Highway need a full new
-set.
+obstacles. Three tracks even reuse *obstacles*: `cactus` (Desert Rally),
+`lava_rock` + `fire_geyser` (Volcano Road), and `mars_crater` (Mars
+Highway) already exist as ski textures, and BootScene's `g(key, w, h,
+drawFn)` helper makes each remaining sprite one small function. Only Grand
+Prix, City Night, and Coastal Highway need a full new set.
 
 ### 3.9 Cars (cosmetic picker — promoted to M2, Rohan's picks lead)
 
@@ -201,7 +219,10 @@ A car picker like the avatar system, purely cosmetic. Headliners chosen for
 Rohan:
 
 - **Police Car** — white/black body, red-and-blue roof light bar with a
-  gentle flicker animation (a tween on two small rects; cheap and delightful)
+  gentle flicker. Implement the flicker as two generated texture variants
+  (lights red / lights blue) swapped on a timer — the originally planned
+  overlay rects would need per-frame position *and* rotation sync, which
+  falls apart the moment the car does an oil-slick spin
 - **F1 Racer** — open-wheel single-seater silhouette in a Red Bull–style
   navy body with red/yellow nose accents (livery-inspired, no logos)
 
@@ -236,7 +257,7 @@ generated in code, consistent with the no-asset-pipeline philosophy.
 | File | Contents |
 |---|---|
 | `src/config/carConfig.js` | Car physics tuning, per-tier difficulty, `TRACK_THEMES`, `CARS`, `AI_RACERS`, nitro settings |
-| `src/scenes/GameSelectScene.js` | Two big tiles: Ski / Racing; remembers last choice per player (localStorage — no schema change) |
+| `src/scenes/GameSelectScene.js` | Two big tiles: Ski / Racing; remembers last choice per player (localStorage keyed by player id — shared iPad; no schema change) |
 | `src/scenes/CarRaceScene.js` | Modeled on `RaceScene`: downward scroll, player at bottom, traffic movement, oil-slick spin, nitro button |
 
 ### Modified files
@@ -247,10 +268,38 @@ generated in code, consistent with the no-asset-pipeline philosophy.
 | `src/scenes/BootScene.js` | Generate car textures (player car ×4 colors, 3 rival cars, traffic car, cone, oil slick, per-track obstacles — deco/particles largely reused, see 3.8) using the existing `generateTexture` pattern; title becomes shared |
 | `src/scenes/PlayerSelectScene.js` | Route to `GameSelectScene` instead of `QualifierScene` |
 | `src/scenes/QualifierScene.js` | Accept a `game` param → flavor text + track-vs-world picker → start `CarRaceScene` or `RaceScene` |
-| `src/scenes/ResultsScene.js` | Carry the `game` param through the "race again" loop (button *and* the spacebar shortcut); write `game` into the session row; guard `best_time_ms` per game (see Database) |
+| `src/scenes/ResultsScene.js` | Carry the `game` param through the "race again" loop (button *and* the spacebar shortcut); write `game` into the session row; guard `best_time_ms` per game (see Database); add a small SWITCH GAME button → GameSelectScene — today the only path to the other game is CHANGE PLAYER, which costs a PIN re-entry |
 | `src/systems/AIController.js` | Extract the ski-specific `AI_SKIERS` array to config; add geometry config (`playerY`, ahead-sign, margins) consumed by `getScreenY`, `findDodgeTarget`, and the X clamps — see 3.7 |
-| `src/systems/BadgeSystem.js` | Add car badges: First Drive, Pole Position, Nitro Master (5 nitros in one race — session-scoped via sessionInfo, no schema change), Traffic Dodger (clean run), Cup Collector… Race-count/streak checks must count `sessions` filtered by `game`, not the shared `players.total_races` — otherwise car races trip "Dedicated Skier" and ski races trip "First Drive" |
+| `src/systems/BadgeSystem.js` | Add car badges: First Drive, Pole Position, Nitro Master (5 nitros in one race — session-scoped via sessionInfo, no schema change), Traffic Dodger (clean run), Cup Collector… Race-count/streak checks must count `sessions` filtered by `game`, not the shared `players.total_races` — otherwise car races trip "Dedicated Skier" and ski races trip "First Drive". Session-scoped ski badges need the same gate: a car clean run awards Traffic Dodger, not ski's "Clean Run" ✨ |
 | `src/scenes/ParentDashboardScene.js` | Show per-game session split (can land in a later phase) |
+
+### CarRaceScene: fork, don't abstract
+
+`RaceScene` is 1,063 lines and works. Building CarRaceScene "modeled on" it
+means a fork, and the fork has a real cost: every future fix to shared
+behavior (math zones, HUD, countdown, results plumbing) must be made twice.
+The adversarial call is to accept that cost anyway — a shared base scene
+would destabilize the working ski game for an abstraction with exactly two
+consumers. Mitigate instead: extract genuinely identical leaf helpers
+(countdown, HUD bars, touch-zone handler) into small modules as they're
+touched, and keep a "forked from RaceScene @ <commit>" comment at the top
+of CarRaceScene listing intentional divergences.
+
+Quirks NOT to copy blindly from RaceScene (found in review):
+
+- `scrollSpeed *= ZONE_SLOW_FACTOR` runs **per frame** while a math popup
+  is open, compounding 0.6^n to a near-stop within ~200 ms — the comment
+  says "60% speed" but it behaves like a pause. Fine in practice for ski,
+  but decide intentionally for pit zones instead of inheriting the
+  comment's lie.
+- `update()` writes `player.setAngle(moveDir * -8)` every frame, which
+  overwrites any angle tween — ski's crash-wobble tween already mostly
+  loses this fight (masked by camera shake, tint, and alpha flash). The
+  oil-slick 360° spin cannot be masked: gate the steering-tilt write
+  behind the spin state or the spin will be invisible.
+- ResultsScene binds `keydown-SPACE` → race-again the moment it's created.
+  With spacebar as the NITRO key, a kid hammering space at the finish line
+  skips straight through the podium. Delay the binding ~1 s.
 
 ### Database (Supabase)
 
@@ -276,8 +325,8 @@ weeks for little gain.
 
 | Milestone | Scope | Outcome |
 |---|---|---|
-| **M1 — First drivable race** | GameSelect scene, CarRaceScene on Grand Prix track (anchored to `scale.height`, not `GAME_HEIGHT`), cones + moving traffic, crash slowdown, 3 rivals on the orientation-fixed AIController, finish + podium. Qualifier gets a routing-only `game` param (reskin waits for M2), carried through Results' race-again loop; car sessions skip `best_time_ms` | Rohan can race a car end-to-end |
-| **M2 — Math under the hood** | Pit zones → nitro charges + NITRO button (multi-touch input work, see 3.5), qualifier reskin + pole-position/armor rewards (head start ≤ 150 px), car picker with Police Car + F1 Racer, 4 tracks | The signature mechanic and Rohan's cars land |
+| **M1 — First drivable race** | GameSelect scene, CarRaceScene on Grand Prix track (anchored to `scale.height`, not `GAME_HEIGHT`), cones + moving traffic, crash slowdown, 3 rivals on the orientation-fixed AIController, finish + podium. Qualifier gets a routing-only `game` param (reskin waits for M2; for car it hides the world picker and fixes Grand Prix, rather than misleadingly offering ski worlds), carried through Results' race-again loop; car sessions skip `best_time_ms` | Rohan can race a car end-to-end |
+| **M2 — Math under the hood** | Pit zones → nitro charges + NITRO button (multi-touch input work, see 3.5), qualifier reskin + pole-position/armor rewards (head start ≤ 150 px), car picker with Police Car + F1 Racer, 2 tracks (Grand Prix + City Night — the rest move to M3; M2 was overstuffed) | The signature mechanic and Rohan's cars land |
 | **M3 — Full garage** | All 8 tracks, remaining cars, car badges, oil-slick spin, S-curved road, dashboard split | Feature parity with ski + car-native extras |
 | **M4 — Polish (stretch)** | Synthesized SFX, drift particles, 3-race Championship Cup with points | Long-term replay value |
 
@@ -285,6 +334,26 @@ M1 and M2 are each roughly one focused working session given how much code
 transfers from `RaceScene` — but each hides one seam that does *not*
 transfer: M1 the AI orientation + dynamic canvas height, M2 the multi-touch
 input. Budget those first, not last.
+
+### Acceptance checks per milestone
+
+There is no test suite (`package.json`: dev/build/preview only), so each
+milestone needs explicit manual checks — they double as the executor's
+acceptance criteria:
+
+- **M1**: rivals render *above* the player when ahead and visibly dodge
+  oncoming traffic; podium placings plausible across 3 races; traffic
+  density doesn't clog the road at any tier; layout correct at an
+  installed-PWA aspect ratio (player and HUD hug the real screen bottom);
+  the ski game still plays exactly as before.
+- **M2**: on a real touch device, steer with one thumb while firing NITRO
+  with the other; releasing the NITRO thumb doesn't stop steering; wrong
+  pit-zone answers cost nothing; pole-position start is visibly ahead with
+  rivals still on screen.
+- **M3**: every track renders its obstacles/deco; the oil-slick spin plays
+  a full visible 360° while the player holds a steer direction; the
+  S-curve corridor keeps obstacles, pit zones, AI, and player inside the
+  drivable band at every offset.
 
 ## 7. Decisions (settled 2026-07-13)
 
@@ -324,3 +393,23 @@ into the sections above; this is the implementer's checklist.
    (`src/systems/AIController.js:110-114`).
 6. New scenes must be registered in `src/main.js`'s scene array — v1 of this
    plan omitted `main.js` from the modified-files table entirely.
+
+Round 2 (adversarial pass, same day):
+
+7. Traffic dwell time is ~3× static hazards (relative speed, not scroll
+   speed, moves them) — reusing ski spawn intervals overcrowds the road;
+   traffic needs its own spawn budget (see 3.4).
+8. Per-frame `setAngle` in `update()` overwrites angle tweens
+   (`src/scenes/RaceScene.js:987`) — gate it during the oil-slick spin or
+   the spin is invisible. Likewise don't copy the per-frame
+   `scrollSpeed *= 0.6` popup slowdown believing it's "60% speed"
+   (`src/scenes/RaceScene.js:1035-1038`) — it compounds to a near-stop.
+9. No path from Results back to Game Select — without a SWITCH GAME
+   button, changing games costs a PIN re-entry
+   (`src/scenes/ResultsScene.js:184-186`).
+10. ResultsScene's instant `keydown-SPACE` binding
+    (`src/scenes/ResultsScene.js:189`) plus spacebar-as-NITRO means a kid
+    mashing space at the finish skips the podium; delay the binding.
+11. Ski texture reuse goes further than round 1 said: `cactus`,
+    `lava_rock`, `fire_geyser`, `mars_crater` serve as car obstacles
+    directly (`src/scenes/BootScene.js:261+`).
