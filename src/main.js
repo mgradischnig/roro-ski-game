@@ -2,8 +2,10 @@ import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from './config/gameConfig.js';
 import { BootScene } from './scenes/BootScene.js';
 import { PlayerSelectScene } from './scenes/PlayerSelectScene.js';
+import { GameSelectScene } from './scenes/GameSelectScene.js';
 import { QualifierScene } from './scenes/QualifierScene.js';
 import { RaceScene } from './scenes/RaceScene.js';
+import { CarRaceScene } from './scenes/CarRaceScene.js';
 import { ResultsScene } from './scenes/ResultsScene.js';
 import { ParentDashboardScene } from './scenes/ParentDashboardScene.js';
 
@@ -32,6 +34,10 @@ function getSafeAreaTop() {
 }
 // Export for scenes to use — adds extra padding in PWA mode regardless
 window.SAFE_AREA_TOP = isMobilePWA ? Math.max(getSafeAreaTop(), 50) : 0;
+// Bottom safe-area inset (home indicator) — fixed 34px game-pixel approximation,
+// mirroring the top inset above (a precise env(safe-area-inset-bottom) read
+// isn't needed since the home indicator height is effectively constant).
+window.SAFE_AREA_BOTTOM = isMobilePWA ? 34 : 0;
 
 const config = {
   type: Phaser.AUTO,
@@ -49,7 +55,7 @@ const config = {
       debug: false,
     },
   },
-  scene: [BootScene, PlayerSelectScene, QualifierScene, RaceScene, ResultsScene, ParentDashboardScene],
+  scene: [BootScene, PlayerSelectScene, GameSelectScene, QualifierScene, RaceScene, CarRaceScene, ResultsScene, ParentDashboardScene],
   input: {
     activePointers: 2,
   },

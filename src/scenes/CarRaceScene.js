@@ -1,24 +1,24 @@
+// Forked from RaceScene (ski). Intentional divergences: mirrored scroll
+// direction, bottom-anchored player on scale.height, traffic hazards with
+// own speed, no in-race math zones yet (pit zones land in M2).
 import Phaser from 'phaser';
 import {
-  GAME_WIDTH, GAME_HEIGHT,
-  PLAYER_START_X, PLAYER_Y, PLAYER_SPEED,
-  BASE_SCROLL_SPEED, MAX_CLEAN_SPEED, BOOST_SCROLL_SPEED, SLOW_SCROLL_SPEED,
-  SPEED_RECOVERY_RATE, CLEAN_SKIING_ACCEL,
-  OBSTACLE_SPAWN_INTERVAL, OBSTACLE_MARGIN,
-  RACE_DISTANCE,
+  GAME_WIDTH,
+  PLAYER_START_X, PLAYER_SPEED,
+  SPEED_RECOVERY_RATE, CLEAN_SKIING_ACCEL, SLOW_SCROLL_SPEED,
+  OBSTACLE_MARGIN,
   TOUCH_ZONE_LEFT, TOUCH_ZONE_RIGHT,
-  COLORS, TIER_DIFFICULTY,
-  SLOPE_THEMES, SLOPE_THEME_KEYS,
-  AI_SKIERS,
+  COLORS,
 } from '../config/gameConfig.js';
+import {
+  CAR_TIER_DIFFICULTY, TRAFFIC_SPEED_RATIO, CAR_GEOMETRY, CAR_PLAYER_BOTTOM_OFFSET,
+  TRACK_THEMES, TRACK_THEME_KEYS, AI_RACERS,
+} from '../config/carConfig.js';
 import { AIController } from '../systems/AIController.js';
-import { MathEngine } from '../systems/MathEngine.js';
-import { MathPopup } from '../ui/MathPopup.js';
-import { RACE_MATH, COINS } from '../config/mathConfig.js';
 
-export class RaceScene extends Phaser.Scene {
+export class CarRaceScene extends Phaser.Scene {
   constructor() {
-    super({ key: 'RaceScene' });
+    super({ key: 'CarRaceScene' });
   }
 
   init(data) {
@@ -31,18 +31,18 @@ export class RaceScene extends Phaser.Scene {
     this.qualifierResponses = data?.qualifierResponses || [];
     this.qualifierCoins = data?.qualifierCoins || 0;
     this.themeKey = data?.themeKey || null;
+    this.gameMode = data?.game || 'car';
   }
 
   create() {
-    // --- Slope theme (from world picker, or random fallback) ---
-    const themeKey = this.themeKey || Phaser.Math.RND.pick(SLOPE_THEME_KEYS);
-    this.theme = SLOPE_THEMES[themeKey];
+    // --- Track theme (from world picker, or random fallback) ---
+    const themeKey = this.themeKey || Phaser.Math.RND.pick(TRACK_THEME_KEYS);
+    this.theme = TRACK_THEMES[themeKey];
 
     // --- Tier-based difficulty ---
-    const tierDiff = TIER_DIFFICULTY[this.playerTier] || TIER_DIFFICULTY[2];
+    const tierDiff = CAR_TIER_DIFFICULTY[this.playerTier] || CAR_TIER_DIFFICULTY[2];
     this.tierScrollSpeed = tierDiff.baseScrollSpeed;
     this.tierMaxCleanSpeed = tierDiff.maxCleanSpeed;
-    this.tierBoostSpeed = tierDiff.boostScrollSpeed;
     this.tierRaceDistance = tierDiff.raceDistance;
     this.tierMaxObstacles = tierDiff.maxObstaclesPerSpawn;
     this.tierAIBaseSpeed = tierDiff.baseScrollSpeed * tierDiff.aiSpeedScale;
@@ -53,44 +53,33 @@ export class RaceScene extends Phaser.Scene {
     this.distanceTraveled = 0;
     this.raceFinished = false;
     this.isHit = false;
-    this.hitTimer = 0;
     this.obstaclesHit = 0;
     this.raceTime = 0;          // ms elapsed during race
     this.playerFinishTime = 0;
     this.currentPosition = 1;   // Player's current race position
-
-    // --- Math zone state (optional zones on the slope) ---
-    this.mathPaused = false;
-    this.mathPopup = null;
-    this.mathZoneTriggers = MathEngine.generateRaceTriggers(
-      this.tierRaceDistance,
-      Phaser.Math.Between(RACE_MATH.ZONE_COUNT_MIN, RACE_MATH.ZONE_COUNT_MAX),
-      RACE_MATH.MARGIN_START,
-      RACE_MATH.MARGIN_END
-    );
-    this.nextMathZoneIndex = 0;
-    this.mathCorrectInRace = 0;
-    this.mathTotalInRace = 0;
-    this.raceQuestionResponses = [];
-    this.raceCoins = 0;
-    this.boostTimer = null;
     this.shieldActive = this.hasShield;
-    this.shieldTimer = null;
 
-    // --- Math zones physics group ---
-    this.mathZones = this.physics.add.group();
+    // --- Bottom-anchored player position (canvas height varies in PWA mode) ---
+    const H = this.scale.height;
+    this.playerY = H - CAR_PLAYER_BOTTOM_OFFSET - (window.SAFE_AREA_BOTTOM || 0);
 
-    // --- Slope background ---
-    this.createSlopeBackground();
+    // --- Road background ---
+    this.createRoadBackground();
 
-    // --- Snow particles ---
-    this.createSnowParticles();
+    // --- Track particles (confetti drifting down) ---
+    this.createTrackParticles();
 
-    // --- Obstacles group ---
+    // --- Obstacles group (static hazards + traffic share this group) ---
     this.obstacles = this.physics.add.group();
     this.obstacleTimer = this.time.addEvent({
       delay: tierDiff.obstacleSpawnInterval,
       callback: this.spawnObstacle,
+      callbackScope: this,
+      loop: true,
+    });
+    this.trafficTimer = this.time.addEvent({
+      delay: tierDiff.trafficSpawnInterval,
+      callback: this.spawnTraffic,
       callbackScope: this,
       loop: true,
     });
@@ -99,31 +88,28 @@ export class RaceScene extends Phaser.Scene {
     this.finishLineSpawned = false;
 
     // --- Player ---
-    this.player = this.physics.add.sprite(PLAYER_START_X, PLAYER_Y, 'skier');
-    this.player.setScale(2.5);
+    this.player = this.physics.add.sprite(PLAYER_START_X, this.playerY, 'car_player');
+    this.player.setScale(2.0);
     this.player.setDepth(10);
-    this.player.body.setSize(14, 16);
+    this.player.body.setSize(14, 24);
 
     // Constrain player to the obstacle zone so they can't dodge by hugging edges
     this.physics.world.setBounds(
       OBSTACLE_MARGIN - 10, 0,
-      GAME_WIDTH - (OBSTACLE_MARGIN - 10) * 2, GAME_HEIGHT
+      GAME_WIDTH - (OBSTACLE_MARGIN - 10) * 2, H
     );
     this.player.setCollideWorldBounds(true);
 
-    // --- AI Opponents ---
+    // --- AI Rivals ---
     this.aiControllers = [];
     this.aiSprites = [];
-    this.createAISkiers();
+    this.createAIRacers();
 
-    // --- Ski trail effect ---
-    this.skiTrails = this.add.group();
+    // --- Skid mark trail effect ---
+    this.skidMarks = this.add.group();
 
-    // --- Collision: player vs obstacles ---
+    // --- Collision: player vs obstacles/traffic ---
     this.physics.add.overlap(this.player, this.obstacles, this.hitObstacle, null, this);
-
-    // --- Collision: player vs math zones ---
-    this.physics.add.overlap(this.player, this.mathZones, this.enterMathZone, null, this);
 
     // --- Input: Keyboard ---
     this.cursors = this.input.keyboard.createCursorKeys();
@@ -148,93 +134,114 @@ export class RaceScene extends Phaser.Scene {
   }
 
   // =====================
-  // AI SKIERS
+  // AI RIVALS
   // =====================
-  createAISkiers() {
-    AI_SKIERS.forEach((config, index) => {
-      // Create sprite at starting position (spread across the slope)
+  createAIRacers() {
+    AI_RACERS.forEach((config, index) => {
+      // Create sprite at starting position (spread across the road)
       const startX = GAME_WIDTH * (0.25 + index * 0.25);
-      const sprite = this.add.sprite(startX, PLAYER_Y, config.texture);
-      sprite.setScale(2.2); // Slightly smaller than player
+      const sprite = this.add.sprite(startX, this.playerY, config.texture);
+      sprite.setScale(2.0);
       sprite.setAlpha(0.85);
       sprite.setDepth(9); // Just below player
 
-      // Create AI controller
-      const controller = new AIController(this, config, sprite, this.tierAIBaseSpeed);
+      // Create AI controller with mirrored (bottom-anchored) geometry
+      const controller = new AIController(this, config, sprite, this.tierAIBaseSpeed, {
+        playerY: this.playerY,
+        aheadSign: CAR_GEOMETRY.aheadSign,
+        margin: CAR_GEOMETRY.margin,
+      });
       this.aiControllers.push(controller);
       this.aiSprites.push(sprite);
     });
   }
 
   // =====================
-  // SLOPE BACKGROUND
+  // ROAD BACKGROUND
   // =====================
-  createSlopeBackground() {
+  createRoadBackground() {
+    const H = this.scale.height;
     this.bgPanels = [];
     for (let i = 0; i < 2; i++) {
       const panel = this.add.graphics();
-      this.drawSlopePanel(panel);
-      panel.y = i * GAME_HEIGHT - GAME_HEIGHT;
+      this.drawRoadPanel(panel);
+      panel.y = i * H - H;
       panel.setDepth(0);
       this.bgPanels.push(panel);
     }
 
-    this.edgeTrees = this.add.group();
-    this.edgeTreeTimer = this.time.addEvent({
+    this.edgeDeco = this.add.group();
+    this.edgeDecoTimer = this.time.addEvent({
       delay: 600,
-      callback: this.spawnEdgeTrees,
+      callback: this.spawnEdgeDeco,
       callbackScope: this,
       loop: true,
     });
   }
 
-  drawSlopePanel(graphics) {
+  drawRoadPanel(graphics) {
+    const H = this.scale.height;
     const bg = this.theme.bg;
+    const edge = this.theme.edge;
+
+    // Asphalt base
     graphics.fillStyle(bg.light, 1);
-    graphics.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    graphics.fillRect(0, 0, GAME_WIDTH, H);
 
-    graphics.lineStyle(1, bg.trail, 0.3);
-    for (let y = 0; y < GAME_HEIGHT; y += 40) {
-      const offset = Phaser.Math.Between(-5, 5);
-      graphics.lineBetween(GAME_WIDTH * 0.3 + offset, y, GAME_WIDTH * 0.3 + offset, y + 30);
-      graphics.lineBetween(GAME_WIDTH * 0.7 + offset, y, GAME_WIDTH * 0.7 + offset, y + 30);
-    }
+    // Dashed lane lines
+    const dashLen = 26;
+    const gapLen = 22;
+    graphics.fillStyle(bg.trail, 0.8);
+    [GAME_WIDTH / 3, (GAME_WIDTH * 2) / 3].forEach(x => {
+      for (let y = 0; y < H; y += dashLen + gapLen) {
+        graphics.fillRect(x - 1.5, y, 3, dashLen);
+      }
+    });
 
+    // Subtle darker patches
     graphics.fillStyle(bg.mid, 0.15);
     for (let i = 0; i < 20; i++) {
       const x = Phaser.Math.Between(30, GAME_WIDTH - 30);
-      const y = Phaser.Math.Between(0, GAME_HEIGHT);
+      const y = Phaser.Math.Between(0, H);
       const w = Phaser.Math.Between(40, 120);
       const h = Phaser.Math.Between(10, 25);
       graphics.fillEllipse(x, y, w, h);
     }
 
-    graphics.fillStyle(bg.dark, 0.4);
-    graphics.fillRect(0, 0, 25, GAME_HEIGHT);
-    graphics.fillRect(GAME_WIDTH - 25, 0, 25, GAME_HEIGHT);
+    // Curbs: alternating red/white edge strips
+    const curbW = 25;
+    const segH = 20;
+    for (let y = 0; y < H; y += segH) {
+      const seg = Math.floor(y / segH);
+      const color = seg % 2 === 0 ? edge.strip : 0xffffff;
+      graphics.fillStyle(color, 1);
+      graphics.fillRect(0, y, curbW, segH);
+      graphics.fillRect(GAME_WIDTH - curbW, y, curbW, segH);
+    }
   }
 
   // =====================
-  // SNOW PARTICLES
+  // TRACK PARTICLES (confetti, falls top -> bottom)
   // =====================
-  createSnowParticles() {
+  createTrackParticles() {
     const theme = this.theme;
-    this.snowflakes = this.add.group();
+    this.trackParticles = this.add.group();
     this.time.addEvent({
       delay: theme.particleInterval,
       callback: () => {
         if (this.raceFinished) return;
+        const H = this.scale.height;
         const flake = this.add.image(
           Phaser.Math.Between(0, GAME_WIDTH), -5, theme.particle
         );
         flake.setAlpha(Phaser.Math.FloatBetween(theme.particleAlpha[0], theme.particleAlpha[1]));
         flake.setScale(Phaser.Math.FloatBetween(0.5, 1.5));
         flake.setDepth(15);
-        this.snowflakes.add(flake);
+        this.trackParticles.add(flake);
 
         this.tweens.add({
           targets: flake,
-          y: GAME_HEIGHT + 10,
+          y: H + 10,
           x: flake.x + Phaser.Math.Between(-30, 30),
           duration: Phaser.Math.Between(2000, 4000),
           onComplete: () => flake.destroy(),
@@ -245,29 +252,29 @@ export class RaceScene extends Phaser.Scene {
   }
 
   // =====================
-  // EDGE TREES
+  // EDGE DECO (grandstands)
   // =====================
-  spawnEdgeTrees() {
+  spawnEdgeDeco() {
     if (this.raceFinished) return;
     const decoKey = this.theme.edgeDeco;
 
     if (Phaser.Math.Between(0, 1)) {
-      const deco = this.add.image(Phaser.Math.Between(5, 20), GAME_HEIGHT + 20, decoKey);
+      const deco = this.add.image(Phaser.Math.Between(5, 20), -20, decoKey);
       deco.setScale(Phaser.Math.FloatBetween(1.5, 2.5));
       deco.setDepth(1);
-      this.edgeTrees.add(deco);
+      this.edgeDeco.add(deco);
     }
 
     if (Phaser.Math.Between(0, 1)) {
-      const deco = this.add.image(Phaser.Math.Between(GAME_WIDTH - 20, GAME_WIDTH - 5), GAME_HEIGHT + 20, decoKey);
+      const deco = this.add.image(Phaser.Math.Between(GAME_WIDTH - 20, GAME_WIDTH - 5), -20, decoKey);
       deco.setScale(Phaser.Math.FloatBetween(1.5, 2.5));
       deco.setDepth(1);
-      this.edgeTrees.add(deco);
+      this.edgeDeco.add(deco);
     }
   }
 
   // =====================
-  // OBSTACLES
+  // OBSTACLES (static hazards)
   // =====================
   spawnObstacle() {
     if (this.raceFinished) return;
@@ -290,14 +297,34 @@ export class RaceScene extends Phaser.Scene {
 
       const obsKeys = this.theme.obstacles;
       const key = Phaser.Math.RND.pick(obsKeys);
-      const obstacle = this.obstacles.create(x, GAME_HEIGHT + 30, key);
+      const obstacle = this.obstacles.create(x, -30, key);
       obstacle.setScale(Phaser.Math.FloatBetween(1.8, 2.5));
       obstacle.body.setImmovable(true);
       obstacle.body.setAllowGravity(false);
       obstacle.setDepth(5);
       obstacle.body.setSize(16, 16);
       obstacle.body.setOffset(2, 4);
+      obstacle.setData('hazardType', 'static');
+      obstacle.setData('speedFactor', 1);
     }
+  }
+
+  // =====================
+  // TRAFFIC (moving hazards, own speed)
+  // =====================
+  spawnTraffic() {
+    if (this.raceFinished) return;
+    if (this.distanceTraveled > this.tierRaceDistance - 300) return;
+
+    const x = Phaser.Math.Between(OBSTACLE_MARGIN, GAME_WIDTH - OBSTACLE_MARGIN);
+    const traffic = this.obstacles.create(x, -40, 'traffic_car');
+    traffic.setScale(2.0);
+    traffic.body.setImmovable(true);
+    traffic.body.setAllowGravity(false);
+    traffic.setDepth(5);
+    traffic.body.setSize(14, 22);
+    traffic.setData('hazardType', 'traffic');
+    traffic.setData('speedFactor', 1 - TRAFFIC_SPEED_RATIO);
   }
 
   // =====================
@@ -316,7 +343,13 @@ export class RaceScene extends Phaser.Scene {
 
     this.isHit = true;
     this.obstaclesHit++;
-    this.targetSpeed = SLOW_SCROLL_SPEED;
+
+    const hazardType = obstacle.getData('hazardType');
+    if (hazardType === 'traffic') {
+      this.targetSpeed = SLOW_SCROLL_SPEED; // big hit
+    } else {
+      this.targetSpeed = 90; // milder hit
+    }
 
     // Camera shake (noticeable but brief)
     this.cameras.main.shake(250, 0.015);
@@ -394,7 +427,7 @@ export class RaceScene extends Phaser.Scene {
       this.obstacles.getChildren().forEach(obs => {
         const dx = Math.abs(ai.sprite.x - obs.x);
         const dy = Math.abs(ai.sprite.y - obs.y);
-        if (dx < 18 && dy < 18) {
+        if (dx < 18 && dy < 22) {
           ai.hitByObstacle();
         }
       });
@@ -490,11 +523,12 @@ export class RaceScene extends Phaser.Scene {
       strokeThickness: 3,
     }).setOrigin(0, 0).setDepth(20);
 
-    // Speed lines container (visual feedback for fast skiing)
+    // Speed lines container (visual feedback for fast driving)
     this.speedLines = this.add.group();
   }
 
   updateHUD() {
+    const H = this.scale.height;
     const barWidth = GAME_WIDTH - 80;
     const barX = 40;
     const barY = 14 + (window.SAFE_AREA_TOP || 0);
@@ -528,11 +562,11 @@ export class RaceScene extends Phaser.Scene {
     this.speedBarFill.fillStyle(barColor, 1);
     this.speedBarFill.fillRoundedRect(speedBarX, speedBarY, speedBarW * speedFraction, speedBarH, 4);
 
-    // Speed lines — appear at edges when going fast (above base speed)
+    // Speed lines — appear at edges when going fast, move DOWN with the road
     if (this.scrollSpeed > this.tierScrollSpeed + 15 && !this.raceFinished && Math.random() < 0.3) {
       const side = Math.random() < 0.5 ? 'left' : 'right';
       const lineX = side === 'left' ? Phaser.Math.Between(5, 30) : Phaser.Math.Between(GAME_WIDTH - 30, GAME_WIDTH - 5);
-      const lineY = Phaser.Math.Between(100, GAME_HEIGHT - 100);
+      const lineY = Phaser.Math.Between(100, H - 100);
       const lineLen = Phaser.Math.Between(15, 35);
 
       const speedLine = this.add.graphics();
@@ -544,7 +578,7 @@ export class RaceScene extends Phaser.Scene {
 
       this.tweens.add({
         targets: speedLine,
-        y: speedLine.y - 40,
+        y: speedLine.y + 40,
         alpha: 0,
         duration: 400,
         onComplete: () => speedLine.destroy(),
@@ -563,6 +597,7 @@ export class RaceScene extends Phaser.Scene {
   // COUNTDOWN
   // =====================
   runCountdown() {
+    const H = this.scale.height;
     this.raceStarted = false;
     this.scrollSpeed = 0;
 
@@ -575,7 +610,7 @@ export class RaceScene extends Phaser.Scene {
     };
 
     // Theme name banner
-    const themeBanner = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 100, this.theme.name, {
+    const themeBanner = this.add.text(GAME_WIDTH / 2, H / 2 - 100, this.theme.name, {
       fontSize: '14px',
       fontFamily: '"Press Start 2P", monospace',
       color: '#ffffff',
@@ -591,7 +626,7 @@ export class RaceScene extends Phaser.Scene {
       onComplete: () => themeBanner.destroy(),
     });
 
-    const countText = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 40, '3', countStyle)
+    const countText = this.add.text(GAME_WIDTH / 2, H / 2 - 40, '3', countStyle)
       .setOrigin(0.5).setDepth(30);
 
     const counts = ['3', '2', '1', 'GO!'];
@@ -634,9 +669,9 @@ export class RaceScene extends Phaser.Scene {
   }
 
   // =====================
-  // SKI TRAILS
+  // SKID MARKS
   // =====================
-  spawnSkiTrail() {
+  spawnSkidMarks() {
     if (!this.raceStarted || this.raceFinished) return;
 
     // Trail intensity scales with speed
@@ -644,12 +679,13 @@ export class RaceScene extends Phaser.Scene {
     const trailAlpha = 0.2 + speedRatio * 0.5;  // 0.2 at slow, 0.7 at max
     const trailLength = 6 + speedRatio * 10;     // 6px at slow, 16px at max
 
+    // Marks trail BEHIND the car, which (facing up) is BELOW it on screen
     const trail = this.add.graphics();
-    trail.fillStyle(speedRatio > 0.5 ? 0xb0e0ff : COLORS.SKI_TRAIL, trailAlpha);
-    trail.fillRect(this.player.x - 8, this.player.y + 16, 2, trailLength);
-    trail.fillRect(this.player.x + 6, this.player.y + 16, 2, trailLength);
+    trail.fillStyle(0x333333, trailAlpha);
+    trail.fillRect(this.player.x - 7, this.player.y + 20, 3, trailLength);
+    trail.fillRect(this.player.x + 7, this.player.y + 20, 3, trailLength);
     trail.setDepth(2);
-    this.skiTrails.add(trail);
+    this.skidMarks.add(trail);
 
     this.tweens.add({
       targets: trail,
@@ -665,7 +701,7 @@ export class RaceScene extends Phaser.Scene {
   spawnFinishLine() {
     this.finishLineSpawned = true;
 
-    const finishY = GAME_HEIGHT + 40;
+    const finishY = -40;
     this.finishLine = this.add.graphics();
     const sqSize = 16;
 
@@ -691,6 +727,9 @@ export class RaceScene extends Phaser.Scene {
     this.playerFinishTime = this.raceTime;
     this.targetSpeed = 0;
     this.obstacleTimer.remove();
+    this.trafficTimer.remove();
+
+    const H = this.scale.height;
 
     // Determine ALL finish positions at this moment based on distance.
     // Player just crossed the finish line (distance >= tierRaceDistance).
@@ -715,7 +754,6 @@ export class RaceScene extends Phaser.Scene {
       let aiTime;
       if (ai.distance >= playerDist) {
         // AI was ahead — they finished earlier than the player
-        // Estimate how much earlier based on distance lead and their speed
         const leadDistance = ai.distance - playerDist;
         const timeAhead = (leadDistance / ai.currentSpeed) * 1000;
         aiTime = playerTime - timeAhead;
@@ -745,12 +783,13 @@ export class RaceScene extends Phaser.Scene {
         playerName: this.playerName,
         tier: this.playerTier,
         qualifierStars: this.qualifierStars,
-        mathCorrectInRace: this.mathCorrectInRace,
-        mathTotalInRace: this.mathTotalInRace,
+        mathCorrectInRace: 0,
+        mathTotalInRace: 0,
         qualifierResponses: this.qualifierResponses,
-        raceResponses: this.raceQuestionResponses,
+        raceResponses: [],
         qualifierCoins: this.qualifierCoins,
-        raceCoins: this.raceCoins,
+        raceCoins: 0,
+        game: this.gameMode,
       });
     });
 
@@ -763,7 +802,7 @@ export class RaceScene extends Phaser.Scene {
       strokeThickness: 6,
     };
 
-    const finishText = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, 'FINISH!', style)
+    const finishText = this.add.text(GAME_WIDTH / 2, H / 2 - 60, 'FINISH!', style)
       .setOrigin(0.5).setDepth(30).setScale(0);
 
     this.tweens.add({
@@ -776,7 +815,7 @@ export class RaceScene extends Phaser.Scene {
     // Confetti
     for (let i = 0; i < 30; i++) {
       const confetti = this.add.rectangle(
-        GAME_WIDTH / 2, GAME_HEIGHT / 2,
+        GAME_WIDTH / 2, H / 2,
         Phaser.Math.Between(4, 10), Phaser.Math.Between(4, 10),
         Phaser.Math.Between(0, 0xffffff)
       ).setDepth(25);
@@ -784,7 +823,7 @@ export class RaceScene extends Phaser.Scene {
       this.tweens.add({
         targets: confetti,
         x: Phaser.Math.Between(20, GAME_WIDTH - 20),
-        y: Phaser.Math.Between(50, GAME_HEIGHT - 100),
+        y: Phaser.Math.Between(50, H - 100),
         angle: Phaser.Math.Between(-360, 360),
         alpha: 0,
         duration: Phaser.Math.Between(1000, 2500),
@@ -807,139 +846,18 @@ export class RaceScene extends Phaser.Scene {
   // =====================
   // UPDATE LOOP
   // =====================
-  // =====================
-  // MATH ZONES (optional)
-  // =====================
-  spawnMathZone() {
-    // Pick a random X position (left/center/right), avoiding overlap with recent obstacles
-    const lanes = [
-      OBSTACLE_MARGIN + 40,                    // left
-      GAME_WIDTH / 2,                           // center
-      GAME_WIDTH - OBSTACLE_MARGIN - 40,        // right
-    ];
-    const x = Phaser.Math.RND.pick(lanes);
-
-    const zone = this.mathZones.create(x, GAME_HEIGHT + 40, 'math_zone');
-    zone.setScale(1.2);
-    zone.body.setImmovable(true);
-    zone.body.setAllowGravity(false);
-    zone.setDepth(6);
-    zone.body.setSize(RACE_MATH.ZONE_WIDTH * 0.8, RACE_MATH.ZONE_HEIGHT * 0.8);
-
-    // Gentle pulse animation to make it inviting
-    this.tweens.add({
-      targets: zone,
-      scaleX: { from: 1.15, to: 1.3 },
-      scaleY: { from: 1.15, to: 1.3 },
-      alpha: { from: 0.7, to: 1.0 },
-      duration: 600,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
-
-    this.nextMathZoneIndex++;
-  }
-
-  enterMathZone(player, zone) {
-    if (this.mathPaused || this.raceFinished) return;
-
-    // Destroy the zone (one-time use)
-    zone.destroy();
-
-    // Trigger math question
-    this.mathPaused = true;
-    this.mathTotalInRace++;
-
-    const question = MathEngine.generateQuestion(
-      this.playerTier, 'in_race', this.raceQuestionResponses
-    );
-
-    this.mathPopup = new MathPopup(this, question, (result) => {
-      this.handleMathAnswer(result, question);
-    }, {
-      noPenalty: true,
-      timerMs: RACE_MATH.ZONE_TIMER,
-    });
-  }
-
-  handleMathAnswer(result, question) {
-    this.mathPaused = false;
-    this.mathPopup = null;
-
-    // Record response
-    this.raceQuestionResponses.push({
-      player_id: this.playerId,
-      context: 'in_race',
-      tier: question.tier,
-      target_number: question.target,
-      format: question.format,
-      question_text: question.questionText,
-      correct_answer: String(question.correctAnswer),
-      player_answer: result.playerAnswer !== null ? String(result.playerAnswer) : null,
-      is_correct: result.isCorrect,
-      response_time_ms: result.responseTimeMs,
-      hint_used: false,
-      hint_level: 0,
-      visual_aid_shown: false,
-    });
-
-    if (result.isCorrect) {
-      this.mathCorrectInRace++;
-      this.raceCoins += COINS.RACE_CORRECT;
-
-      // Speed boost — generous reward for choosing to do math
-      const boostDuration = result.isFast
-        ? RACE_MATH.BOOST_DURATION_FAST
-        : RACE_MATH.BOOST_DURATION;
-      this.targetSpeed = this.tierBoostSpeed;
-      this.scrollSpeed = this.tierBoostSpeed;
-
-      // Clear any previous boost timer
-      if (this.boostTimer) this.boostTimer.destroy();
-      this.boostTimer = this.time.delayedCall(boostDuration, () => {
-        this.targetSpeed = this.tierScrollSpeed;
-        this.boostTimer = null;
-      });
-
-      // Visual feedback — teal flash + floating "+BOOST" text
-      this.cameras.main.flash(200, 42, 157, 143, false);
-
-      const boostText = this.add.text(this.player.x, this.player.y - 20, '+BOOST!', {
-        fontSize: '12px',
-        fontFamily: '"Press Start 2P", monospace',
-        color: '#2a9d8f',
-        stroke: '#ffffff',
-        strokeThickness: 2,
-      }).setOrigin(0.5).setDepth(25);
-
-      this.tweens.add({
-        targets: boostText,
-        y: boostText.y - 50,
-        alpha: 0,
-        duration: 1000,
-        ease: 'Cubic.easeOut',
-        onComplete: () => boostText.destroy(),
-      });
-    } else {
-      // NO penalty — just resume at current speed
-      // The correct answer was already shown by the MathPopup
-      // No slowdown, no red flash — encourage trying again next time
-    }
-  }
-
   update(time, delta) {
     if (!this.raceStarted) return;
 
     const dt = delta / 1000;
+    const H = this.scale.height;
 
-    // --- Race timer (paused during math popup) ---
-    if (!this.raceFinished && !this.mathPaused) {
+    // --- Race timer ---
+    if (!this.raceFinished) {
       this.raceTime += delta;
     }
 
-
-    // --- Clean skiing bonus: gradually speed up when not hitting obstacles ---
+    // --- Clean driving bonus: gradually speed up when not hitting obstacles ---
     if (!this.isHit && !this.raceFinished) {
       this.targetSpeed = Math.min(this.targetSpeed + CLEAN_SKIING_ACCEL * dt, this.tierMaxCleanSpeed);
     }
@@ -956,25 +874,25 @@ export class RaceScene extends Phaser.Scene {
       this.distanceTraveled += this.scrollSpeed * dt;
     }
 
-    // --- Scroll background ---
+    // --- Scroll background DOWN ---
     const scrollDelta = this.scrollSpeed * dt;
     for (const panel of this.bgPanels) {
-      panel.y -= scrollDelta;
-      if (panel.y <= -GAME_HEIGHT) {
-        panel.y += GAME_HEIGHT * 2;
+      panel.y += scrollDelta;
+      if (panel.y >= H) {
+        panel.y -= H * 2;
       }
     }
 
-    // --- Scroll edge trees ---
-    this.edgeTrees.getChildren().forEach(tree => {
-      tree.y -= scrollDelta * 0.8;
-      if (tree.y < -40) tree.destroy();
+    // --- Scroll edge deco ---
+    this.edgeDeco.getChildren().forEach(deco => {
+      deco.y += scrollDelta * 0.8;
+      if (deco.y > H + 40) deco.destroy();
     });
 
-    // --- Scroll obstacles ---
+    // --- Scroll obstacles/traffic (each at its own relative speed) ---
     this.obstacles.getChildren().forEach(obstacle => {
-      obstacle.y -= scrollDelta;
-      if (obstacle.y < -40) obstacle.destroy();
+      obstacle.y += scrollDelta * (obstacle.getData('speedFactor') || 1);
+      if (obstacle.y > H + 60) obstacle.destroy();
     });
 
     // --- Player movement ---
@@ -985,23 +903,21 @@ export class RaceScene extends Phaser.Scene {
 
     if (!this.raceFinished) {
       this.player.body.setVelocityX(moveDir * PLAYER_SPEED);
-      this.player.setAngle(moveDir * -8);
+      this.player.setAngle(moveDir * 8); // tilt into the turn (sprite faces up)
     } else {
       this.player.body.setVelocityX(0);
     }
 
-    // --- Update AI opponents (independent speed, rubber-banded) ---
-    // Freeze AI during math popup so the player isn't punished for answering
-    const aiDt = this.mathPaused ? 0 : dt;
+    // --- Update AI rivals (independent speed, rubber-banded) ---
     this.aiControllers.forEach(ai => {
-      ai.update(aiDt, time, this.obstacles, this.distanceTraveled);
+      ai.update(dt, time, this.obstacles, this.distanceTraveled);
 
       // Update AI sprite Y position based on relative distance
       const screenY = ai.getScreenY(this.distanceTraveled);
       ai.sprite.y = screenY;
 
       // Hide if off screen
-      ai.sprite.setVisible(screenY > -50 && screenY < GAME_HEIGHT + 50);
+      ai.sprite.setVisible(screenY > -50 && screenY < H + 50);
     });
 
     // --- AI obstacle collisions ---
@@ -1015,27 +931,9 @@ export class RaceScene extends Phaser.Scene {
     // --- Update positions ---
     this.updatePositions();
 
-    // --- Ski trail ---
+    // --- Skid marks ---
     if (time % 3 < 1) {
-      this.spawnSkiTrail();
-    }
-
-    // --- Spawn math zones when distance thresholds are reached ---
-    if (!this.raceFinished && !this.mathPaused &&
-        this.nextMathZoneIndex < this.mathZoneTriggers.length &&
-        this.distanceTraveled >= this.mathZoneTriggers[this.nextMathZoneIndex]) {
-      this.spawnMathZone();
-    }
-
-    // --- Scroll math zones upward with the slope ---
-    this.mathZones.getChildren().forEach(zone => {
-      zone.y -= scrollDelta;
-      if (zone.y < -80) zone.destroy();
-    });
-
-    // --- Slow game during math popup (gentler: 60% speed) ---
-    if (this.mathPaused) {
-      this.scrollSpeed *= RACE_MATH.ZONE_SLOW_FACTOR;
+      this.spawnSkidMarks();
     }
 
     // --- HUD ---
@@ -1047,11 +945,11 @@ export class RaceScene extends Phaser.Scene {
     }
 
     if (this.finishLineSpawned && !this.raceFinished) {
-      this.finishLine.y -= scrollDelta;
-      this.finishFlagLeft.y -= scrollDelta;
-      this.finishFlagRight.y -= scrollDelta;
+      this.finishLine.y += scrollDelta;
+      this.finishFlagLeft.y += scrollDelta;
+      this.finishFlagRight.y += scrollDelta;
 
-      if (this.finishLine.y <= PLAYER_Y + 20) {
+      if (this.finishLine.y >= this.playerY - 20) {
         this.finishRace();
       }
     }

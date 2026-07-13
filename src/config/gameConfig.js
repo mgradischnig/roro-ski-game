@@ -29,6 +29,40 @@ export const OBSTACLE_MARGIN = 40; // Min distance from screen edges
 // Race
 export const RACE_DISTANCE = 5000; // Total distance to finish line (in scroll pixels)
 
+/**
+ * AI opponent skier configurations.
+ * Each AI has a distinct personality that affects how they race.
+ */
+export const AI_SKIERS = [
+  {
+    name: 'Yuki',
+    texture: 'skier_ai_blue',
+    skill: 0.85,              // High dodge ability
+    lanePreference: 0.35,
+    // "Steady racer" — consistent speed, rarely crashes
+    personality: 'steady',
+    baseSpeedRatio: 0.97,     // 145.5 px/sec — very close to player's base 150
+  },
+  {
+    name: 'Finn',
+    texture: 'skier_ai_green',
+    skill: 0.6,
+    lanePreference: 0.5,
+    // "Erratic racer" — bursts of speed then slowdowns
+    personality: 'erratic',
+    baseSpeedRatio: 0.92,     // 138 px/sec
+  },
+  {
+    name: 'Maple',
+    texture: 'skier_ai_orange',
+    skill: 0.45,
+    lanePreference: 0.65,
+    // "Slow starter" — starts slow, gradually builds speed
+    personality: 'slow_starter',
+    baseSpeedRatio: 0.87,     // 130.5 px/sec base, builds to ~137
+  },
+];
+
 // Touch zones (percentage of screen width)
 export const TOUCH_ZONE_LEFT = 0.4; // Left 40% = steer left
 export const TOUCH_ZONE_RIGHT = 0.6; // Right 40% = steer right (above 60%)

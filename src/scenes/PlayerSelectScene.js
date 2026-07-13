@@ -163,7 +163,7 @@ export class PlayerSelectScene extends Phaser.Scene {
       this.pinPad.showSuccess();
       PlayerManager.setCurrentPlayer(player);
 
-      this.scene.start('QualifierScene', {
+      this.scene.start('GameSelectScene', {
         playerId: player.id,
         playerName: player.name,
         tier: player.current_tier,

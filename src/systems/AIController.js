@@ -6,48 +6,23 @@ import {
   RACE_DISTANCE,
 } from '../config/gameConfig.js';
 
-/**
- * AI opponent skier configurations.
- * Each AI has a distinct personality that affects how they race.
- */
-export const AI_SKIERS = [
-  {
-    name: 'Yuki',
-    texture: 'skier_ai_blue',
-    skill: 0.85,              // High dodge ability
-    lanePreference: 0.35,
-    // "Steady racer" — consistent speed, rarely crashes
-    personality: 'steady',
-    baseSpeedRatio: 0.97,     // 145.5 px/sec — very close to player's base 150
-  },
-  {
-    name: 'Finn',
-    texture: 'skier_ai_green',
-    skill: 0.6,
-    lanePreference: 0.5,
-    // "Erratic racer" — bursts of speed then slowdowns
-    personality: 'erratic',
-    baseSpeedRatio: 0.92,     // 138 px/sec
-  },
-  {
-    name: 'Maple',
-    texture: 'skier_ai_orange',
-    skill: 0.45,
-    lanePreference: 0.65,
-    // "Slow starter" — starts slow, gradually builds speed
-    personality: 'slow_starter',
-    baseSpeedRatio: 0.87,     // 130.5 px/sec base, builds to ~137
-  },
-];
-
 export class AIController {
-  constructor(scene, config, sprite, tierBaseSpeed = BASE_SCROLL_SPEED) {
+  /**
+   * @param {Phaser.Scene} scene
+   * @param {object} config - AI personality/skill config (e.g. from AI_SKIERS)
+   * @param {Phaser.GameObjects.Sprite} sprite
+   * @param {number} tierBaseSpeed
+   * @param {object|null} geometry - Orientation config: { playerY, aheadSign, margin }.
+   *   Defaults to the ski game's geometry (player near top, obstacles approach from below).
+   */
+  constructor(scene, config, sprite, tierBaseSpeed = BASE_SCROLL_SPEED, geometry = null) {
     this.scene = scene;
     this.config = config;
     this.sprite = sprite;
     this.name = config.name;
     this.skill = config.skill;
     this.personality = config.personality;
+    this.geo = geometry || { playerY: PLAYER_Y, aheadSign: 1, margin: OBSTACLE_MARGIN };
 
     // AI race state — speed is INDEPENDENT of player speed
     this.distance = 0;
@@ -136,8 +111,8 @@ export class AIController {
       const prefX = GAME_WIDTH * this.config.lanePreference;
       this.targetX = Phaser.Math.Clamp(
         prefX + Phaser.Math.Between(-60, 60),
-        OBSTACLE_MARGIN + 20,
-        GAME_WIDTH - OBSTACLE_MARGIN - 20
+        this.geo.margin + 20,
+        GAME_WIDTH - this.geo.margin - 20
       );
     }
 
@@ -153,7 +128,7 @@ export class AIController {
       this.sprite.setAngle(0);
     }
 
-    this.sprite.x = Phaser.Math.Clamp(this.sprite.x, OBSTACLE_MARGIN, GAME_WIDTH - OBSTACLE_MARGIN);
+    this.sprite.x = Phaser.Math.Clamp(this.sprite.x, this.geo.margin, GAME_WIDTH - this.geo.margin);
   }
 
   /**
@@ -195,7 +170,7 @@ export class AIController {
     let closestDist = Infinity;
 
     obstacles.getChildren().forEach(obs => {
-      const dy = obs.y - myY;
+      const dy = (obs.y - myY) * this.geo.aheadSign;
       if (dy > 0 && dy < lookaheadDistance) {
         const dist = Math.abs(obs.x - myX);
         if (dist < 60 && dy < closestDist) {
@@ -210,9 +185,9 @@ export class AIController {
 
     const obsX = closestObstacle.x;
     if (obsX > myX) {
-      return Phaser.Math.Clamp(myX - Phaser.Math.Between(40, 80), OBSTACLE_MARGIN + 10, GAME_WIDTH - OBSTACLE_MARGIN - 10);
+      return Phaser.Math.Clamp(myX - Phaser.Math.Between(40, 80), this.geo.margin + 10, GAME_WIDTH - this.geo.margin - 10);
     } else {
-      return Phaser.Math.Clamp(myX + Phaser.Math.Between(40, 80), OBSTACLE_MARGIN + 10, GAME_WIDTH - OBSTACLE_MARGIN - 10);
+      return Phaser.Math.Clamp(myX + Phaser.Math.Between(40, 80), this.geo.margin + 10, GAME_WIDTH - this.geo.margin - 10);
     }
   }
 
@@ -271,13 +246,13 @@ export class AIController {
    */
   getScreenY(playerDistance) {
     const relativeDistance = this.distance - playerDistance;
-    // Positive = AI ahead = further down the slope = BELOW player on screen (larger Y)
-    // Negative = AI behind = further up the slope = ABOVE player on screen (smaller Y)
-    const targetY = PLAYER_Y + (relativeDistance * 0.3);
+    // aheadSign +1 (ski): ahead = BELOW player on screen (larger Y).
+    // aheadSign -1 (car): ahead = ABOVE player on screen (smaller Y).
+    const targetY = this.geo.playerY + (relativeDistance * 0.3 * this.geo.aheadSign);
 
-    if (this._displayY === undefined) this._displayY = PLAYER_Y;
+    if (this._displayY === undefined) this._displayY = this.geo.playerY;
     this._displayY += (targetY - this._displayY) * 0.08;
 
-    return Phaser.Math.Clamp(this._displayY, -50, 900);
+    return Phaser.Math.Clamp(this._displayY, -50, this.scene.scale.height + 100);
   }
 }

@@ -23,7 +23,7 @@ export class BootScene extends Phaser.Scene {
       align: 'center',
     };
 
-    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT * 0.28, 'RoRo\nSKI', {
+    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT * 0.28, 'RoRo\nGAMES', {
       ...titleStyle,
       fontSize: '42px',
       lineSpacing: 12,
@@ -239,6 +239,9 @@ export class BootScene extends Phaser.Scene {
 
     // --- Theme-specific textures ---
     this.generateThemeTextures();
+
+    // --- Car racing textures ---
+    this.generateCarTextures();
 
     // Finish flag
     const flagSize = 32;
@@ -655,6 +658,118 @@ export class BootScene extends Phaser.Scene {
       // Leaf vein
       gfx.lineStyle(0.5, 0x338822, 0.5);
       gfx.lineBetween(0, 2.5, 7, 2.5);
+    });
+  }
+
+  generateCarTextures() {
+    const g = (key, w, h, drawFn) => {
+      const gfx = this.make.graphics({ x: 0, y: 0, add: false });
+      drawFn(gfx);
+      gfx.generateTexture(key, w, h);
+      gfx.destroy();
+    };
+
+    // All cars drawn top-down, nose pointing up unless noted otherwise.
+
+    // Player car — red body, darker red cabin/windshield, racing stripe
+    g('car_player', 20, 32, gfx => {
+      gfx.fillStyle(COLORS.PLAYER_RED, 1);
+      gfx.fillRoundedRect(3, 2, 14, 28, 4);
+      // Cabin / windshield (darker red)
+      gfx.fillStyle(0xa8232f, 1);
+      gfx.fillRoundedRect(6, 7, 8, 9, 2);
+      // Wheel stubs (corners)
+      gfx.fillStyle(0x2a2a2a, 1);
+      gfx.fillRect(0, 4, 4, 8);
+      gfx.fillRect(16, 4, 4, 8);
+      gfx.fillRect(0, 20, 4, 8);
+      gfx.fillRect(16, 20, 4, 8);
+      // Racing stripe
+      gfx.fillStyle(0xffffff, 1);
+      gfx.fillRect(9, 2, 2, 28);
+    });
+
+    // AI racer cars — same silhouette, colored bodies, gray cabin, no stripe
+    const aiCarColors = [
+      { name: 'car_ai_blue', body: 0x4488ff },
+      { name: 'car_ai_green', body: 0x44bb44 },
+      { name: 'car_ai_orange', body: 0xffaa22 },
+    ];
+
+    aiCarColors.forEach(({ name, body }) => {
+      g(name, 20, 32, gfx => {
+        gfx.fillStyle(body, 1);
+        gfx.fillRoundedRect(3, 2, 14, 28, 4);
+        // Gray cabin / windshield
+        gfx.fillStyle(0x777777, 1);
+        gfx.fillRoundedRect(6, 7, 8, 9, 2);
+        // Wheel stubs (corners)
+        gfx.fillStyle(0x2a2a2a, 1);
+        gfx.fillRect(0, 4, 4, 8);
+        gfx.fillRect(16, 4, 4, 8);
+        gfx.fillRect(0, 20, 4, 8);
+        gfx.fillRect(16, 20, 4, 8);
+      });
+    });
+
+    // Traffic car — plain duller sedan, nose pointing DOWN, slightly shorter
+    g('traffic_car', 20, 30, gfx => {
+      gfx.fillStyle(0xb0b8c0, 1);
+      gfx.fillRoundedRect(3, 1, 14, 26, 4);
+      // Darker roof, offset toward the bottom (front) since nose points down
+      gfx.fillStyle(0x7a828c, 1);
+      gfx.fillRoundedRect(6, 14, 8, 9, 2);
+      // Wheel stubs
+      gfx.fillStyle(0x2a2a2a, 1);
+      gfx.fillRect(0, 3, 4, 7);
+      gfx.fillRect(16, 3, 4, 7);
+      gfx.fillRect(0, 18, 4, 7);
+      gfx.fillRect(16, 18, 4, 7);
+    });
+
+    // Cone obstacle — orange triangle with white stripe and darker base
+    g('cone', 14, 14, gfx => {
+      gfx.fillStyle(0xff8822, 1);
+      gfx.fillTriangle(7, 0, 1, 14, 13, 14);
+      gfx.fillStyle(0xffffff, 1);
+      gfx.fillRect(3, 8, 8, 2.5);
+      gfx.fillStyle(0xcc6611, 1);
+      gfx.fillRect(1, 11, 12, 3);
+    });
+
+    // Tire stack obstacle — two black tire ellipses with dark gray centers
+    g('tire_stack', 18, 16, gfx => {
+      gfx.fillStyle(0x222222, 1);
+      gfx.fillEllipse(9, 11, 16, 9);
+      gfx.fillEllipse(9, 5, 16, 9);
+      gfx.fillStyle(0x555555, 1);
+      gfx.fillEllipse(9, 11, 7, 4);
+      gfx.fillEllipse(9, 5, 7, 4);
+    });
+
+    // Grandstand edge deco — gray block, crowd dots, white roof strip
+    g('grandstand', 26, 22, gfx => {
+      gfx.fillStyle(0x888888, 1);
+      gfx.fillRect(1, 6, 24, 16);
+      // White roof strip
+      gfx.fillStyle(0xffffff, 1);
+      gfx.fillRect(0, 3, 26, 4);
+      // Crowd — 3 rows of tiny multicolor dots
+      const crowdColors = [0xe63946, 0x4488ff, 0x44bb44, 0xffaa22, 0xffdd57, 0xff69b4];
+      for (let row = 0; row < 3; row++) {
+        for (let col = 0; col < 8; col++) {
+          gfx.fillStyle(crowdColors[(row + col) % crowdColors.length], 1);
+          gfx.fillCircle(3 + col * 3, 10 + row * 4, 1.2);
+        }
+      }
+    });
+
+    // Confetti particle — two tiny overlapping squares
+    g('confetti_particle', 6, 6, gfx => {
+      gfx.fillStyle(0xffdd57, 0.9);
+      gfx.fillRect(0, 0, 4, 4);
+      gfx.fillStyle(0xff6b9d, 0.9);
+      gfx.fillRect(2, 2, 4, 4);
     });
   }
 }
