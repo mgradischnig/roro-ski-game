@@ -4,6 +4,7 @@ import { PlayerManager } from '../systems/PlayerManager.js';
 import { BadgeSystem } from '../systems/BadgeSystem.js';
 import { MathEngine } from '../systems/MathEngine.js';
 import { MATH_TIERS } from '../config/mathConfig.js';
+import { CHAMPIONSHIP } from '../config/carConfig.js';
 
 export class ResultsScene extends Phaser.Scene {
   constructor() {
@@ -122,6 +123,12 @@ export class ResultsScene extends Phaser.Scene {
       });
     });
 
+    // --- Championship Cup tracking (car mode only) ---
+    // Computed here (synchronously, before saveSessionData() below) so
+    // this.cupBonusCoins is ready in time for the totalCoins calc a few
+    // lines down. Only the celebration overlay itself is delayed.
+    this.updateChampionship();
+
     // --- Stats summary ---
     const statsY = startY + this.results.length * rowHeight + 30;
 
@@ -152,7 +159,8 @@ export class ResultsScene extends Phaser.Scene {
     // --- Coins earned ---
     const totalCoins = this.qualifierCoins + this.raceCoins
       + (this.playerPosition === 1 ? 5 : 0)
-      + (this.obstaclesHit === 0 ? 3 : 0);
+      + (this.obstaclesHit === 0 ? 3 : 0)
+      + (this.cupBonusCoins || 0);
     if (totalCoins > 0) {
       const coinsY = statsY + (this.obstaclesHit === 0 ? 55 : 30);
       this.add.text(GAME_WIDTH / 2, coinsY, `+${totalCoins} coins`, {
@@ -178,6 +186,29 @@ export class ResultsScene extends Phaser.Scene {
       const nitroY = statsY + (totalCoins > 0 ? 75 : 30) + (this.mathTotalInRace > 0 ? 22 : 0);
       this.add.text(GAME_WIDTH / 2, nitroY, `NITRO x${this.nitroUsed}`, {
         fontSize: '9px',
+        fontFamily: '"Press Start 2P", monospace',
+        color: '#457b9d',
+      }).setOrigin(0.5);
+    }
+
+    // --- Championship Cup standings strip (car mode, mid-cup only —
+    // the finale replaces this with a full celebration overlay instead) ---
+    if (this.gameMode === 'car' && this.cupRaceNumber > 0 && !this.cupFinale) {
+      const cupY = statsY + (totalCoins > 0 ? 75 : 30)
+        + (this.mathTotalInRace > 0 ? 22 : 0)
+        + (this.nitroUsed > 0 ? 22 : 0);
+
+      this.add.text(GAME_WIDTH / 2, cupY, `CUP · RACE ${this.cupRaceNumber}/${CHAMPIONSHIP.RACES}`, {
+        fontSize: '10px',
+        fontFamily: '"Press Start 2P", monospace',
+        color: '#f4a261',
+      }).setOrigin(0.5);
+
+      const standingsLine = this.cupStandings
+        .map(s => `${s.name} ${s.points}`)
+        .join(' · ');
+      this.add.text(GAME_WIDTH / 2, cupY + 16, standingsLine, {
+        fontSize: '8px',
         fontFamily: '"Press Start 2P", monospace',
         color: '#457b9d',
       }).setOrigin(0.5);
@@ -282,6 +313,115 @@ export class ResultsScene extends Phaser.Scene {
     }
   }
 
+  // --- Championship Cup (car mode only) ---
+  // Every CHAMPIONSHIP.RACES car races form a cup. Standings persist across
+  // races in this.registry (game-global, session-scoped — cleared on page
+  // reload, which is fine: a cup is meant to live within one sitting).
+  updateChampionship() {
+    this.cupWon = false;
+    this.cupBonusCoins = 0;
+    this.cupRaceNumber = 0;
+    this.cupStandings = [];
+    this.cupFinale = false;
+    this.cupWinnerName = null;
+
+    if (this.gameMode !== 'car') return;
+
+    // Guard: no logged-in player (test/dev) still runs the cup logic, just
+    // against a shared dev registry key.
+    const regKey = 'championship_' + (this.playerId || 'dev');
+    const state = this.registry.get(regKey) || { raceNumber: 0, points: {} };
+
+    // Award this race's points (results are already sorted by finish time).
+    this.results.forEach((entry, index) => {
+      const pts = CHAMPIONSHIP.POINTS[index] || 0;
+      state.points[entry.name] = (state.points[entry.name] || 0) + pts;
+    });
+    state.raceNumber += 1;
+    this.cupRaceNumber = state.raceNumber;
+
+    const standings = Object.entries(state.points)
+      .map(([name, points]) => ({ name, points }))
+      .sort((a, b) => b.points - a.points);
+    this.cupStandings = standings.slice(0, 3);
+
+    if (state.raceNumber < CHAMPIONSHIP.RACES) {
+      // Cup still in progress — persist and render the compact strip later.
+      this.registry.set(regKey, state);
+      return;
+    }
+
+    // Cup complete — clear the registry so the next car race starts a
+    // fresh cup, and figure out who won.
+    this.registry.remove(regKey);
+    this.cupFinale = true;
+
+    const playerEntry = this.results.find(r => r.isPlayer);
+    const playerName = playerEntry ? playerEntry.name : this.playerName;
+    const topPoints = standings.length > 0 ? standings[0].points : 0;
+    const playerPoints = state.points[playerName] || 0;
+    // Ties break toward the player — kinder for a kid.
+    const winnerName = playerPoints === topPoints ? playerName : standings[0].name;
+
+    this.cupWinnerName = winnerName;
+    this.cupWon = winnerName === playerName;
+    this.cupBonusCoins = this.cupWon ? CHAMPIONSHIP.WINNER_COINS : 0;
+
+    // The celebration renders ~1.2s in so it doesn't collide with the
+    // podium-row entry animations. this.time is scene-scoped (Phaser's
+    // Clock plugin destroys all pending timer events on scene shutdown),
+    // so if the player skips out early (RACE AGAIN / SPACE) this callback
+    // is torn down with the scene and can never double-fire.
+    this.time.delayedCall(1200, () => this.showChampionshipCelebration());
+  }
+
+  showChampionshipCelebration() {
+    const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.55)
+      .setDepth(40);
+
+    const titleText = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 90, 'CHAMPIONSHIP CUP', {
+      fontSize: '18px',
+      fontFamily: '"Press Start 2P", monospace',
+      color: '#f4a261',
+      stroke: '#ffffff',
+      strokeThickness: 3,
+    }).setOrigin(0.5).setDepth(41);
+
+    const trophyText = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 40, '🏆', {
+      fontSize: '48px',
+    }).setOrigin(0.5).setDepth(41);
+
+    const winnerText = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 20, `${this.cupWinnerName} WINS THE CUP!`, {
+      fontSize: '12px',
+      fontFamily: '"Press Start 2P", monospace',
+      color: '#ffffff',
+    }).setOrigin(0.5).setDepth(41);
+
+    const standingsStr = this.cupStandings
+      .map((s, i) => `${i + 1}. ${s.name} ${s.points}pts`)
+      .join('\n');
+    const standingsText = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 60, standingsStr, {
+      fontSize: '9px',
+      fontFamily: '"Press Start 2P", monospace',
+      color: '#e8f4f8',
+      align: 'center',
+    }).setOrigin(0.5).setDepth(41);
+
+    this.createConfetti();
+
+    const overlayElements = [overlay, titleText, trophyText, winnerText, standingsText];
+
+    // Auto-fade after 4 seconds.
+    this.time.delayedCall(4000, () => {
+      this.tweens.add({
+        targets: overlayElements,
+        alpha: 0,
+        duration: 500,
+        onComplete: () => overlayElements.forEach(el => el.destroy()),
+      });
+    });
+  }
+
   async saveSessionData() {
     if (!this.playerId) return; // no player logged in, skip
 
@@ -290,7 +430,8 @@ export class ResultsScene extends Phaser.Scene {
 
     const totalCoins = this.qualifierCoins + this.raceCoins
       + (this.playerPosition === 1 ? 5 : 0)
-      + (this.obstaclesHit === 0 ? 3 : 0);
+      + (this.obstaclesHit === 0 ? 3 : 0)
+      + (this.cupBonusCoins || 0);
 
     const allResponses = [...this.qualifierResponses, ...this.raceResponses];
 
@@ -332,6 +473,7 @@ export class ResultsScene extends Phaser.Scene {
         finish_position: this.playerPosition,
         game: this.gameMode,
         nitro_used: this.nitroUsed,
+        cup_won: this.cupWon || false,
       };
       const newBadges = await BadgeSystem.checkAndAward(this.playerId, sessionInfo);
       if (newBadges.length > 0) {

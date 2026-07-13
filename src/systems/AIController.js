@@ -12,8 +12,10 @@ export class AIController {
    * @param {object} config - AI personality/skill config (e.g. from AI_SKIERS)
    * @param {Phaser.GameObjects.Sprite} sprite
    * @param {number} tierBaseSpeed
-   * @param {object|null} geometry - Orientation config: { playerY, aheadSign, margin }.
+   * @param {object|null} geometry - Orientation config: { playerY, aheadSign, margin, getBounds? }.
    *   Defaults to the ski game's geometry (player near top, obstacles approach from below).
+   *   getBounds(), if provided, returns { minX, maxX } for the current drivable corridor
+   *   (e.g. a curved road) and takes precedence over the static margin-based bounds.
    */
   constructor(scene, config, sprite, tierBaseSpeed = BASE_SCROLL_SPEED, geometry = null) {
     this.scene = scene;
@@ -94,6 +96,13 @@ export class AIController {
     this.currentSpeed = speed;
     this.distance += speed * dt;
 
+    // --- Corridor bounds (supports curved roads via geo.getBounds; ski's
+    // geometry has no getBounds, so this is byte-identical to the old
+    // this.geo.margin-based bounds for that path) ---
+    const bounds = this.geo.getBounds
+      ? this.geo.getBounds()
+      : { minX: this.geo.margin, maxX: GAME_WIDTH - this.geo.margin };
+
     // --- Obstacle avoidance ---
     this.dodgeCooldown -= dt;
     if (this.dodgeCooldown <= 0) {
@@ -108,11 +117,13 @@ export class AIController {
     this.wanderTimer -= dt * 1000;
     if (this.wanderTimer <= 0) {
       this.wanderTimer = this.wanderInterval;
-      const prefX = GAME_WIDTH * this.config.lanePreference;
+      const prefX = this.geo.getBounds
+        ? Phaser.Math.Linear(bounds.minX, bounds.maxX, this.config.lanePreference)
+        : GAME_WIDTH * this.config.lanePreference;
       this.targetX = Phaser.Math.Clamp(
         prefX + Phaser.Math.Between(-60, 60),
-        this.geo.margin + 20,
-        GAME_WIDTH - this.geo.margin - 20
+        bounds.minX + 20,
+        bounds.maxX - 20
       );
     }
 
@@ -128,7 +139,7 @@ export class AIController {
       this.sprite.setAngle(0);
     }
 
-    this.sprite.x = Phaser.Math.Clamp(this.sprite.x, this.geo.margin, GAME_WIDTH - this.geo.margin);
+    this.sprite.x = Phaser.Math.Clamp(this.sprite.x, bounds.minX, bounds.maxX);
   }
 
   /**
@@ -183,11 +194,15 @@ export class AIController {
     if (!closestObstacle) return null;
     if (Math.random() > this.skill) return null;
 
+    const bounds = this.geo.getBounds
+      ? this.geo.getBounds()
+      : { minX: this.geo.margin, maxX: GAME_WIDTH - this.geo.margin };
+
     const obsX = closestObstacle.x;
     if (obsX > myX) {
-      return Phaser.Math.Clamp(myX - Phaser.Math.Between(40, 80), this.geo.margin + 10, GAME_WIDTH - this.geo.margin - 10);
+      return Phaser.Math.Clamp(myX - Phaser.Math.Between(40, 80), bounds.minX + 10, bounds.maxX - 10);
     } else {
-      return Phaser.Math.Clamp(myX + Phaser.Math.Between(40, 80), this.geo.margin + 10, GAME_WIDTH - this.geo.margin - 10);
+      return Phaser.Math.Clamp(myX + Phaser.Math.Between(40, 80), bounds.minX + 10, bounds.maxX - 10);
     }
   }
 

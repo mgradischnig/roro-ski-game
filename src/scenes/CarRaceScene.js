@@ -7,7 +7,6 @@ import {
   GAME_WIDTH,
   PLAYER_START_X, PLAYER_SPEED,
   SPEED_RECOVERY_RATE, CLEAN_SKIING_ACCEL, SLOW_SCROLL_SPEED,
-  OBSTACLE_MARGIN,
   TOUCH_ZONE_LEFT, TOUCH_ZONE_RIGHT,
   COLORS,
 } from '../config/gameConfig.js';
@@ -15,8 +14,10 @@ import {
   CAR_TIER_DIFFICULTY, TRAFFIC_SPEED_RATIO, CAR_GEOMETRY, CAR_PLAYER_BOTTOM_OFFSET,
   TRACK_THEMES, TRACK_THEME_KEYS, AI_RACERS, NITRO,
   CARS, POLE_POSITION_HEAD_START,
+  CORRIDOR_HALF_WIDTH, roadCenterAt, SPIN_HAZARDS, OIL_SPAWN_CHANCE,
 } from '../config/carConfig.js';
 import { AIController } from '../systems/AIController.js';
+import { SoundFX } from '../systems/SoundFX.js';
 import { MathEngine } from '../systems/MathEngine.js';
 import { MathPopup } from '../ui/MathPopup.js';
 import { TouchButton } from '../ui/TouchButton.js';
@@ -62,11 +63,19 @@ export class CarRaceScene extends Phaser.Scene {
     this.distanceTraveled = 0;
     this.raceFinished = false;
     this.isHit = false;
+    this.isSpinning = false;
+    this._spinCooldownUntil = 0;
     this.obstaclesHit = 0;
     this.raceTime = 0;          // ms elapsed during race
     this.playerFinishTime = 0;
     this.currentPosition = 1;   // Player's current race position
     this.shieldActive = this.hasShield;
+
+    // --- Sound FX (synthesized WebAudio, M4 stretch) ---
+    this.sfx = new SoundFX(this);
+    this.events.once('shutdown', () => this.sfx.destroy());
+    this._lastMoveDir = 0;
+    this._lastDriftAt = 0;
 
     // --- Nitro / pit-zone math state ---
     this.nitroCharges = 0;
@@ -92,6 +101,12 @@ export class CarRaceScene extends Phaser.Scene {
 
     // --- Road background ---
     this.createRoadBackground();
+
+    // --- Corridor sprites (curbs + lane dashes) — scroll down the S-curve ---
+    this.roadLines = this.add.group();
+    this.curbSegmentIndex = 0;
+    this.lastCurbSpawnDistance = 0;
+    this.lastDashSpawnDistance = 0;
 
     // --- Track particles (confetti drifting down) ---
     this.createTrackParticles();
@@ -137,11 +152,10 @@ export class CarRaceScene extends Phaser.Scene {
       });
     }
 
-    // Constrain player to the obstacle zone so they can't dodge by hugging edges
-    this.physics.world.setBounds(
-      OBSTACLE_MARGIN - 10, 0,
-      GAME_WIDTH - (OBSTACLE_MARGIN - 10) * 2, H
-    );
+    // World bounds now span the full canvas width — the S-curved corridor is
+    // narrower than the screen, so the player is clamped to it manually in
+    // update() instead (setCollideWorldBounds still stops it at the screen edge).
+    this.physics.world.setBounds(0, 0, GAME_WIDTH, H);
     this.player.setCollideWorldBounds(true);
 
     // --- AI Rivals ---
@@ -225,6 +239,12 @@ export class CarRaceScene extends Phaser.Scene {
         playerY: this.playerY,
         aheadSign: CAR_GEOMETRY.aheadSign,
         margin: CAR_GEOMETRY.margin,
+        // AI ride near the player's row, so the player-row corridor center
+        // is the right curve reference for their bounds.
+        getBounds: () => {
+          const c = roadCenterAt(Math.max(0, this.distanceTraveled - this.playerY));
+          return { minX: c - CORRIDOR_HALF_WIDTH, maxX: c + CORRIDOR_HALF_WIDTH };
+        },
       });
 
       // Pole position reward: AI starts with a distance deficit (head start
@@ -282,21 +302,10 @@ export class CarRaceScene extends Phaser.Scene {
   drawRoadPanel(graphics) {
     const H = this.scale.height;
     const bg = this.theme.bg;
-    const edge = this.theme.edge;
 
     // Asphalt base
     graphics.fillStyle(bg.light, 1);
     graphics.fillRect(0, 0, GAME_WIDTH, H);
-
-    // Dashed lane lines
-    const dashLen = 26;
-    const gapLen = 22;
-    graphics.fillStyle(bg.trail, 0.8);
-    [GAME_WIDTH / 3, (GAME_WIDTH * 2) / 3].forEach(x => {
-      for (let y = 0; y < H; y += dashLen + gapLen) {
-        graphics.fillRect(x - 1.5, y, 3, dashLen);
-      }
-    });
 
     // Subtle darker patches
     graphics.fillStyle(bg.mid, 0.15);
@@ -308,16 +317,8 @@ export class CarRaceScene extends Phaser.Scene {
       graphics.fillEllipse(x, y, w, h);
     }
 
-    // Curbs: alternating red/white edge strips
-    const curbW = 25;
-    const segH = 20;
-    for (let y = 0; y < H; y += segH) {
-      const seg = Math.floor(y / segH);
-      const color = seg % 2 === 0 ? edge.strip : 0xffffff;
-      graphics.fillStyle(color, 1);
-      graphics.fillRect(0, y, curbW, segH);
-      graphics.fillRect(GAME_WIDTH - curbW, y, curbW, segH);
-    }
+    // Curbs and dashed lane lines are now scrolling sprites (this.roadLines)
+    // that follow the S-curved corridor — see spawn logic in update().
   }
 
   // =====================
@@ -380,6 +381,10 @@ export class CarRaceScene extends Phaser.Scene {
     if (this.raceFinished) return;
     if (this.distanceTraveled > this.tierRaceDistance - 300) return;
 
+    const c = roadCenterAt(this.distanceTraveled);
+    const minX = c - CORRIDOR_HALF_WIDTH + 20;
+    const maxX = c + CORRIDOR_HALF_WIDTH - 20;
+
     const count = Phaser.Math.Between(1, this.tierMaxObstacles);
     const usedPositions = [];
 
@@ -388,23 +393,34 @@ export class CarRaceScene extends Phaser.Scene {
       let attempts = 0;
 
       do {
-        x = Phaser.Math.Between(OBSTACLE_MARGIN, GAME_WIDTH - OBSTACLE_MARGIN);
+        x = Phaser.Math.Between(minX, maxX);
         attempts++;
       } while (usedPositions.some(pos => Math.abs(pos - x) < 80) && attempts < 10);
 
       if (attempts >= 10) continue;
       usedPositions.push(x);
 
-      const obsKeys = this.theme.obstacles;
-      const key = Phaser.Math.RND.pick(obsKeys);
+      // Oil slicks can appear on any track; otherwise pick from the theme's
+      // obstacle set (some of which are spin hazards themselves, e.g. ice_patch/puddle).
+      const isOil = Math.random() < OIL_SPAWN_CHANCE;
+      const key = isOil ? 'oil_slick' : Phaser.Math.RND.pick(this.theme.obstacles);
+      const isSpin = isOil || SPIN_HAZARDS.includes(key);
+
       const obstacle = this.obstacles.create(x, -30, key);
       obstacle.setScale(Phaser.Math.FloatBetween(1.8, 2.5));
       obstacle.body.setImmovable(true);
       obstacle.body.setAllowGravity(false);
       obstacle.setDepth(5);
-      obstacle.body.setSize(16, 16);
-      obstacle.body.setOffset(2, 4);
-      obstacle.setData('hazardType', 'static');
+
+      if (isOil) {
+        obstacle.body.setSize(18, 8);
+        obstacle.body.setOffset(2, 2);
+      } else {
+        obstacle.body.setSize(16, 16);
+        obstacle.body.setOffset(2, 4);
+      }
+
+      obstacle.setData('hazardType', isSpin ? 'spin' : 'static');
       obstacle.setData('speedFactor', 1);
     }
   }
@@ -416,7 +432,11 @@ export class CarRaceScene extends Phaser.Scene {
     if (this.raceFinished) return;
     if (this.distanceTraveled > this.tierRaceDistance - 300) return;
 
-    const x = Phaser.Math.Between(OBSTACLE_MARGIN, GAME_WIDTH - OBSTACLE_MARGIN);
+    const c = roadCenterAt(this.distanceTraveled);
+    const minX = c - CORRIDOR_HALF_WIDTH + 20;
+    const maxX = c + CORRIDOR_HALF_WIDTH - 20;
+
+    const x = Phaser.Math.Between(minX, maxX);
     const traffic = this.obstacles.create(x, -40, 'traffic_car');
     traffic.setScale(2.0);
     traffic.body.setImmovable(true);
@@ -431,11 +451,13 @@ export class CarRaceScene extends Phaser.Scene {
   // PIT ZONES (math questions that bank nitro charges)
   // =====================
   spawnPitZone() {
-    // Pick a random X position (left/center/right), same lanes as obstacles
+    // Pick a random X position (left/center/right), same lanes as obstacles,
+    // following the S-curved corridor at this row's spawn distance
+    const c = roadCenterAt(this.distanceTraveled);
     const lanes = [
-      OBSTACLE_MARGIN + 40,                    // left
-      GAME_WIDTH / 2,                           // center
-      GAME_WIDTH - OBSTACLE_MARGIN - 40,        // right
+      c - CORRIDOR_HALF_WIDTH + 40,   // left
+      c,                              // center
+      c + CORRIDOR_HALF_WIDTH - 40,   // right
     ];
     const x = Phaser.Math.RND.pick(lanes);
 
@@ -547,6 +569,8 @@ export class CarRaceScene extends Phaser.Scene {
     this.targetSpeed = this.tierBoostSpeed;
     this.scrollSpeed = this.tierBoostSpeed;
 
+    this.sfx.nitroWhoosh();
+
     // Orange camera flash
     this.cameras.main.flash(200, 255, 140, 34, false);
 
@@ -560,7 +584,72 @@ export class CarRaceScene extends Phaser.Scene {
   // COLLISION
   // =====================
   hitObstacle(player, obstacle) {
-    if (this.isHit || this.raceFinished) return;
+    if (this.raceFinished) return;
+
+    // Oil-slick spin hazards are a gag, not a hit: they must not consume
+    // Bumper Armor, must not count toward obstaclesHit, and can trigger even
+    // during crash recovery — so this branch runs BEFORE the isHit guard.
+    if (obstacle.getData('hazardType') === 'spin') {
+      // Nitro invincibility plows straight through oil too (obstacle is not
+      // destroyed either way — the slick isn't destructible, it stays on the road).
+      if (NITRO.INVINCIBLE && this.nitroActive) return;
+
+      // Already spinning, or still on cooldown from the last trigger (the
+      // slick isn't destroyed, so the player can re-overlap it while passing).
+      if (this.isSpinning || this.time.now < (this._spinCooldownUntil || 0)) return;
+      this._spinCooldownUntil = this.time.now + 1600;
+
+      this.sfx.spinWhee();
+      this.isSpinning = true;
+      this.tweens.add({
+        targets: this.player,
+        angle: 360,
+        duration: 800,
+        ease: 'Cubic.easeOut',
+        onComplete: () => {
+          this.player.setAngle(0);
+          this.isSpinning = false;
+        },
+      });
+
+      // Floating "WHOA!" text
+      const whoaText = this.add.text(player.x, player.y - 20, 'WHOA!', {
+        fontSize: '11px',
+        fontFamily: '"Press Start 2P", monospace',
+        color: '#8866cc',
+        stroke: '#ffffff',
+        strokeThickness: 2,
+      }).setOrigin(0.5).setDepth(25);
+
+      this.tweens.add({
+        targets: whoaText,
+        y: whoaText.y - 50,
+        alpha: 0,
+        duration: 1000,
+        ease: 'Cubic.easeOut',
+        onComplete: () => whoaText.destroy(),
+      });
+
+      // Small oil-colored spray burst
+      for (let i = 0; i < 6; i++) {
+        const spray = this.add.image(player.x, player.y + 10, 'oil_slick');
+        spray.setScale(Phaser.Math.FloatBetween(0.3, 0.6));
+        spray.setDepth(12);
+        this.tweens.add({
+          targets: spray,
+          x: spray.x + Phaser.Math.Between(-40, 40),
+          y: spray.y + Phaser.Math.Between(-20, 30),
+          alpha: 0,
+          scale: 0.1,
+          duration: Phaser.Math.Between(300, 600),
+          onComplete: () => spray.destroy(),
+        });
+      }
+
+      return;
+    }
+
+    if (this.isHit) return;
 
     // Nitro invincibility: drive straight through, no penalty
     if (NITRO.INVINCIBLE && this.nitroActive) {
@@ -579,9 +668,11 @@ export class CarRaceScene extends Phaser.Scene {
       this.shieldActive = false;
       obstacle.destroy();
       this.cameras.main.flash(200, 42, 157, 200, false); // blue flash
+      this.sfx.skid();
       return;
     }
 
+    this.sfx.crash();
     this.isHit = true;
     this.obstaclesHit++;
 
@@ -906,6 +997,7 @@ export class CarRaceScene extends Phaser.Scene {
           this.raceStarted = true;
           this.scrollSpeed = this.tierScrollSpeed;
           this.targetSpeed = this.tierScrollSpeed;
+          this.sfx.startEngine();
           this.tweens.add({
             targets: countText,
             alpha: 0,
@@ -978,6 +1070,7 @@ export class CarRaceScene extends Phaser.Scene {
     this.targetSpeed = 0;
     this.obstacleTimer.remove();
     this.trafficTimer.remove();
+    this.sfx.stopEngine();
 
     const H = this.scale.height;
 
@@ -1108,6 +1201,9 @@ export class CarRaceScene extends Phaser.Scene {
       this.raceTime += delta;
     }
 
+    // --- Engine pitch follows current speed ---
+    this.sfx.setEngineSpeed(Phaser.Math.Clamp((this.scrollSpeed - 40) / (this.tierBoostSpeed - 40), 0, 1));
+
     // --- Clean driving bonus: gradually speed up when not hitting obstacles ---
     // Skipped while nitro burns: the clamp to tierMaxCleanSpeed would pull the
     // boost speed back down one frame after firing, gutting the flame window.
@@ -1142,6 +1238,37 @@ export class CarRaceScene extends Phaser.Scene {
       if (deco.y > H + 40) deco.destroy();
     });
 
+    // --- Corridor sprites: curbs + lane dashes follow the S-curve ---
+    // while-loops (not if) so a fast scroll frame can't skip a spawn.
+    while (this.distanceTraveled - this.lastCurbSpawnDistance >= 26) {
+      this.lastCurbSpawnDistance += 26;
+      const c = roadCenterAt(this.distanceTraveled);
+      const leftX = c - CORRIDOR_HALF_WIDTH - 12;
+      const rightX = c + CORRIDOR_HALF_WIDTH + 12;
+      const tint = this.curbSegmentIndex % 2 ? 0xffffff : this.theme.edge.strip;
+
+      const leftCurb = this.add.image(leftX, -30, 'curb_segment').setTint(tint).setDepth(1);
+      const rightCurb = this.add.image(rightX, -30, 'curb_segment').setTint(tint).setDepth(1);
+      this.roadLines.add(leftCurb);
+      this.roadLines.add(rightCurb);
+      this.curbSegmentIndex++;
+    }
+
+    while (this.distanceTraveled - this.lastDashSpawnDistance >= 52) {
+      this.lastDashSpawnDistance += 52;
+      const c = roadCenterAt(this.distanceTraveled);
+
+      const leftDash = this.add.image(c - 80, -30, 'lane_dash').setTint(this.theme.bg.trail).setAlpha(0.8).setDepth(1);
+      const rightDash = this.add.image(c + 80, -30, 'lane_dash').setTint(this.theme.bg.trail).setAlpha(0.8).setDepth(1);
+      this.roadLines.add(leftDash);
+      this.roadLines.add(rightDash);
+    }
+
+    this.roadLines.getChildren().forEach(line => {
+      line.y += scrollDelta;
+      if (line.y > H + 40) line.destroy();
+    });
+
     // --- Scroll obstacles/traffic (each at its own relative speed) ---
     this.obstacles.getChildren().forEach(obstacle => {
       obstacle.y += scrollDelta * (obstacle.getData('speedFactor') || 1);
@@ -1154,11 +1281,44 @@ export class CarRaceScene extends Phaser.Scene {
     else if (this.cursors.right.isDown) moveDir = 1;
     if (this.touchDirection !== 0) moveDir = this.touchDirection;
 
+    // Steering skid: a fresh turn (sign flip, or starting from neutral) at
+    // speed gets an audible chirp. SoundFX throttles internally.
+    if (moveDir !== this._lastMoveDir && moveDir !== 0 &&
+        this.scrollSpeed > 0.85 * this.tierMaxCleanSpeed) {
+      this.sfx.skid();
+    }
+    this._lastMoveDir = moveDir;
+
     if (!this.raceFinished) {
-      this.player.body.setVelocityX(moveDir * PLAYER_SPEED);
-      this.player.setAngle(moveDir * 8); // tilt into the turn (sprite faces up)
+      // Spinning (oil slick) scrambles steering but doesn't kill it, and the
+      // spin tween owns player.angle while it's playing — don't fight it.
+      this.player.body.setVelocityX(this.isSpinning ? moveDir * PLAYER_SPEED * 0.35 : moveDir * PLAYER_SPEED);
+      if (!this.isSpinning) this.player.setAngle(moveDir * 8); // tilt into the turn (sprite faces up)
     } else {
       this.player.body.setVelocityX(0);
+    }
+
+    // --- Player clamp follows the S-curve at the player's row ---
+    const pc = roadCenterAt(Math.max(0, this.distanceTraveled - this.playerY));
+    this.player.x = Phaser.Math.Clamp(this.player.x, pc - CORRIDOR_HALF_WIDTH + 14, pc + CORRIDOR_HALF_WIDTH - 14);
+
+    // --- Drift smoke puffs (rear-outside wheel, while turning at speed) ---
+    if (moveDir !== 0 && this.scrollSpeed > 0.8 * this.tierMaxCleanSpeed && !this.isSpinning &&
+        time - this._lastDriftAt >= 90) {
+      this._lastDriftAt = time;
+      const puff = this.add.circle(
+        this.player.x - moveDir * 9, this.player.y + 22,
+        Phaser.Math.Between(2, 4), 0xdddddd, 0.5
+      );
+      puff.setDepth(8);
+      this.tweens.add({
+        targets: puff,
+        y: puff.y + 24,
+        alpha: 0,
+        scale: 2,
+        duration: 350,
+        onComplete: () => puff.destroy(),
+      });
     }
 
     // --- Update AI rivals (independent speed, rubber-banded) ---

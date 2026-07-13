@@ -1,5 +1,6 @@
 // Car Racing config — mirrors the shape of src/config/gameConfig.js
 // for the ski game, but for the "RoRo Racing" car mode.
+import { GAME_WIDTH } from './gameConfig.js';
 
 // Per-tier difficulty scaling for car racing (tier 2 = baseline, matches
 // gameConfig's TIER_DIFFICULTY values verbatim, plus a traffic spawn cadence).
@@ -62,6 +63,20 @@ export const CAR_GEOMETRY = {
 // Player car sits this many px above the real bottom of the canvas.
 export const CAR_PLAYER_BOTTOM_OFFSET = 150;
 
+// S-curved road: the drivable corridor's center drifts as a slow sine of
+// distance. ONE shared helper — every spawn/clamp site calls this; never
+// scatter per-site offsets.
+export const ROAD_CURVE = { AMPLITUDE: 55, WAVELENGTH: 2600 };
+export const CORRIDOR_HALF_WIDTH = 165;
+export function roadCenterAt(distance) {
+  return GAME_WIDTH / 2
+    + ROAD_CURVE.AMPLITUDE * Math.sin((distance / ROAD_CURVE.WAVELENGTH) * Math.PI * 2);
+}
+
+// Hazards that spin the car instead of slowing it (oil physics):
+export const SPIN_HAZARDS = ['oil_slick', 'ice_patch', 'puddle'];
+export const OIL_SPAWN_CHANCE = 0.12; // fraction of static spawns that are oil slicks (all tracks)
+
 // Track themes — random visual variety per race (same shape as gameConfig's
 // SLOPE_THEMES). Only one track for now.
 export const TRACK_THEMES = {
@@ -87,9 +102,71 @@ export const TRACK_THEMES = {
     particleAlpha: [0.3, 0.8],
     particleInterval: 250,
   },
+  coastal: {
+    name: 'Coastal Highway',
+    bg: { light: 0x8a9aa8, mid: 0x7a8a98, dark: 0x6a7a88, trail: 0xf0f0f0 },
+    edge: { strip: 0x2a9d8f },
+    obstacles: ['beach_ball', 'crab'],            // NEW textures
+    edgeDeco: 'coconut_palm',                     // REUSED (ski coconut theme)
+    particle: 'bubble',                           // REUSED (ski underwater theme)
+    particleColor: 0xaaddff, particleAlpha: [0.3, 0.6], particleInterval: 300,
+  },
+  desert: {
+    name: 'Desert Rally',
+    bg: { light: 0xc8b088, mid: 0xb8a078, dark: 0xa89068, trail: 0xfff8e8 },
+    edge: { strip: 0xcc6611 },
+    obstacles: ['cactus', 'tumbleweed'],          // cactus REUSED, tumbleweed NEW
+    edgeDeco: 'palm_tree',                        // REUSED (ski desert theme)
+    particle: 'sand',                             // REUSED
+    particleColor: 0xd4b878, particleAlpha: [0.3, 0.5], particleInterval: 100,
+  },
+  snowy: {
+    name: 'Snowy Pass',
+    bg: { light: 0xdce8f0, mid: 0xc8dce8, dark: 0xb8d0e0, trail: 0x8899aa },
+    edge: { strip: 0x4477aa },
+    obstacles: ['ice_patch', 'snowman'],          // NEW (ice_patch is a spin hazard later)
+    edgeDeco: 'tree',                             // REUSED (ski snow theme)
+    particle: 'snowflake',                        // REUSED
+    particleColor: 0xffffff, particleAlpha: [0.3, 0.7], particleInterval: 150,
+  },
+  jungle: {
+    name: 'Jungle Road',
+    bg: { light: 0x3a5a30, mid: 0x2f4a26, dark: 0x24391d, trail: 0xd8cc88 },
+    edge: { strip: 0x6b4226 },
+    obstacles: ['fallen_log', 'puddle'],          // NEW (puddle is a spin hazard later)
+    edgeDeco: 'forest_bush',                      // REUSED (ski forest theme)
+    particle: 'firefly',                          // REUSED
+    particleColor: 0xccff66, particleAlpha: [0.4, 0.9], particleInterval: 250,
+  },
+  mars: {
+    name: 'Mars Highway',
+    bg: { light: 0xb44d34, mid: 0xa04430, dark: 0x8a3525, trail: 0xe8b090 },
+    edge: { strip: 0x5a2a1a },
+    obstacles: ['mars_crater', 'mars_rover'],     // crater REUSED, rover NEW
+    edgeDeco: 'mars_cliff',                       // REUSED (ski mars theme)
+    particle: 'mars_dust',                        // REUSED
+    particleColor: 0xd48050, particleAlpha: [0.3, 0.6], particleInterval: 100,
+  },
+  volcano: {
+    name: 'Volcano Road',
+    bg: { light: 0x4a2a1a, mid: 0x3e2212, dark: 0x321a0c, trail: 0xffaa55 },
+    edge: { strip: 0xff6622 },
+    obstacles: ['lava_rock', 'fire_geyser'],      // both REUSED (ski lava theme)
+    edgeDeco: 'volcano',                          // REUSED
+    particle: 'ember',                            // REUSED
+    particleColor: 0xff6622, particleAlpha: [0.4, 0.9], particleInterval: 130,
+  },
 };
 
 export const TRACK_THEME_KEYS = Object.keys(TRACK_THEMES);
+
+// Championship Cup: every 3 car races form a cup. F1-style points by
+// finish position; the champion gets a celebration + bonus coins.
+export const CHAMPIONSHIP = {
+  RACES: 3,
+  POINTS: [10, 6, 4, 2],   // 1st..4th
+  WINNER_COINS: 10,
+};
 
 // Qualifier rewards for the car game: 4-5 stars = pole position
 // (head start), 5 stars additionally = bumper armor (the ski shield,
@@ -105,11 +182,13 @@ export const CAR_QUALIFIER_REWARDS = {
 };
 export const POLE_POSITION_HEAD_START = 140; // px of AI distance deficit
 
-// Cosmetic car picker roster (M2: headliners; recolors land in M3)
+// Cosmetic car picker roster (M2: headliners; M3 adds the recolors below)
 export const CARS = [
   { key: 'red_rocket', name: 'Red Rocket', texture: 'car_player' },
   { key: 'police', name: 'Police Car', texture: 'car_police' },
   { key: 'f1', name: 'F1 Racer', texture: 'car_f1' },
+  { key: 'green_machine', name: 'Green Machine', texture: 'car_green' },
+  { key: 'pink_lightning', name: 'Pink Lightning', texture: 'car_pink' },
 ];
 
 // Nitro: correct pit-zone answers bank charges; the player fires them

@@ -620,7 +620,7 @@ export class QualifierScene extends Phaser.Scene {
     this.selectedThemeKey = null; // null = random
 
     if (this.gameMode === 'car') {
-      // Car mode: Random + the 2 car tracks
+      // Car mode: Random + all car tracks
       const trackItems = [
         { key: null, label: 'Random', color: 0x888888, icon: null },
         ...TRACK_THEME_KEYS.map(k => ({
@@ -630,7 +630,14 @@ export class QualifierScene extends Phaser.Scene {
           icon: TRACK_THEMES[k].obstacles[0],
         })),
       ];
-      this.renderThemePicker('PICK YOUR TRACK', trackItems, safeTop);
+      // Compact tiles: 9 items (Random + 8 tracks) at 3 cols x 3 rows would
+      // overflow the ski picker's 80x65 sizing before the START button at
+      // 710; shrinking to 70x52 keeps the last row (row-center ~554) clear
+      // of the car picker rendered below it. See renderCarPicker for the
+      // resulting Y arithmetic.
+      this.renderThemePicker('PICK YOUR TRACK', trackItems, safeTop, {
+        tileW: 70, tileH: 52, gap: 8, iconScale: 1.6, labelPad: 12,
+      });
 
       // --- Car picker (car mode only) ---
       this.renderCarPicker(safeTop);
@@ -649,8 +656,14 @@ export class QualifierScene extends Phaser.Scene {
       this.renderThemePicker('PICK YOUR WORLD', pickerItems, safeTop);
     }
 
-    // START RACE button
-    const btnY = GAME_HEIGHT - 90;
+    // START RACE button. Car mode anchors to the real canvas bottom: on a
+    // notched phone PWA safeTop pushes the pickers down past GAME_HEIGHT-90,
+    // but the canvas is also taller there (scale.height > GAME_HEIGHT), so
+    // the button moves down with it instead of colliding. max() so devices
+    // with a SHORTER canvas than 800 keep ski's existing placement.
+    const btnY = (this.gameMode === 'car'
+      ? Math.max(GAME_HEIGHT, this.scale.height)
+      : GAME_HEIGHT) - 90;
     const bg = this.add.rectangle(GAME_WIDTH / 2, btnY, 300, 55, COLORS.UI_DARK, 0.9)
       .setInteractive({ useHandCursor: true });
     const btnText = this.add.text(GAME_WIDTH / 2, btnY, 'START RACE!', {
@@ -680,8 +693,17 @@ export class QualifierScene extends Phaser.Scene {
 
   // Shared tile-grid renderer for the ski world picker and the car track
   // picker. Wires this.selectedThemeKey and this.worldHighlights; visuals
-  // are pixel-identical to the original ski-only implementation.
-  renderThemePicker(titleText, items, safeTop) {
+  // are pixel-identical to the original ski-only implementation when called
+  // with no tileOpts (ski defaults below).
+  renderThemePicker(titleText, items, safeTop, tileOpts = {}) {
+    const {
+      tileW = 80,
+      tileH = 65,
+      gap = 10,
+      iconScale = 2.2,
+      labelPad = 14,
+    } = tileOpts;
+
     this.add.text(GAME_WIDTH / 2, 370 + safeTop, titleText, {
       fontSize: '12px',
       fontFamily: '"Press Start 2P", monospace',
@@ -689,11 +711,17 @@ export class QualifierScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     // 3-column grid (wraps to further rows if more items are supplied)
-    const tileW = 80;
-    const tileH = 65;
-    const gap = 10;
     const cols = 3;
     const rowStartY = 410 + safeTop;
+    const rowSpacing = tileH + gap + labelPad;
+    const rows = Math.ceil(items.length / cols);
+
+    // Stash grid geometry so renderCarPicker (car mode only) can compute
+    // its title Y directly below the last rendered track row instead of
+    // using a fixed offset.
+    this.themePickerRows = rows;
+    this.themePickerRowStartY = rowStartY;
+    this.themePickerRowSpacing = rowSpacing;
 
     this.worldHighlights = [];
 
@@ -706,7 +734,7 @@ export class QualifierScene extends Phaser.Scene {
       const rowTotalW = rowCount * tileW + (rowCount - 1) * gap;
       const rowStartX = GAME_WIDTH / 2 - rowTotalW / 2 + tileW / 2;
       const ix = rowStartX + col * (tileW + gap);
-      const iy = rowStartY + row * (tileH + gap + 14);
+      const iy = rowStartY + row * rowSpacing;
 
       // Colored tile background
       const tile = this.add.rectangle(ix, iy, tileW, tileH, item.color, 0.9)
@@ -720,7 +748,7 @@ export class QualifierScene extends Phaser.Scene {
 
       // Icon: obstacle texture or "?" for random
       if (item.icon) {
-        this.add.image(ix, iy - 6, item.icon).setScale(2.2);
+        this.add.image(ix, iy - 6, item.icon).setScale(iconScale);
       } else {
         this.add.text(ix, iy - 6, '?', {
           fontSize: '28px',
@@ -729,11 +757,14 @@ export class QualifierScene extends Phaser.Scene {
         }).setOrigin(0.5);
       }
 
-      // Label below icon
+      // Label below icon — white with a dark stroke so it reads on every
+      // tile color, including dark tiles like City Night/Volcano/Jungle.
       this.add.text(ix, iy + tileH / 2 - 6, item.label, {
         fontSize: '8px',
         fontFamily: '"Press Start 2P", monospace',
-        color: '#333333',
+        color: '#ffffff',
+        stroke: '#222222',
+        strokeThickness: 2,
       }).setOrigin(0.5);
 
       // Default: first item (Random) is selected
@@ -751,8 +782,16 @@ export class QualifierScene extends Phaser.Scene {
   // Car mode only: cosmetic car picker row, rendered below the track picker.
   // Persists the choice per-player in localStorage (default 'red_rocket').
   renderCarPicker(safeTop) {
-    const trackTitleY = 370 + safeTop;
-    const titleY = trackTitleY + 150;
+    // Position directly below the track picker's last rendered row instead
+    // of a fixed offset (the track grid grew to 3 rows once 6 tracks were
+    // added — a fixed +150 from the title collided with row 2/3 of tiles).
+    // Compact car-mode track tiles (70x52, gap 8, labelPad 12) render at
+    // rowStartY(410) + row*(52+8+12=72): rows at 410, 482, 554 (+safeTop).
+    // rows=3 -> titleY = 410 + 3*72 + 10 = 636 (+safeTop).
+    const rows = this.themePickerRows || 3;
+    const rowStartY = this.themePickerRowStartY ?? (410 + safeTop);
+    const rowSpacing = this.themePickerRowSpacing ?? 72;
+    const titleY = rowStartY + rows * rowSpacing + 10;
 
     this.add.text(GAME_WIDTH / 2, titleY, 'PICK YOUR CAR', {
       fontSize: '12px',
@@ -772,10 +811,14 @@ export class QualifierScene extends Phaser.Scene {
     }
     this.selectedCarKey = savedCarKey;
 
+    // Compact car tiles (44 tall vs the original 55) keep the row + label
+    // clear of the START button: rowY = titleY + 36 = 672 (+safeTop),
+    // bottom edge = 672 + 44/2 = 694 (+safeTop) -- clears START at 710
+    // (barely: a 16px gap).
     const tileW = 60;
-    const tileH = 55;
+    const tileH = 44;
     const gap = 14;
-    const rowY = titleY + 40;
+    const rowY = titleY + 36;
     const totalW = CARS.length * tileW + (CARS.length - 1) * gap;
     const startX = GAME_WIDTH / 2 - totalW / 2 + tileW / 2;
 
@@ -796,13 +839,16 @@ export class QualifierScene extends Phaser.Scene {
         .setFillStyle(0x000000, 0);
 
       // Icon
-      this.add.image(ix, iy - 8, car.texture).setScale(1.8);
+      this.add.image(ix, iy - 8, car.texture).setScale(1.3);
 
-      // Label below icon
+      // Label below icon — white with a dark stroke for legibility on
+      // every tile color (same fix as the track/world picker tiles).
       this.add.text(ix, iy + tileH / 2 - 6, car.name, {
-        fontSize: '7px',
+        fontSize: '6px',
         fontFamily: '"Press Start 2P", monospace',
-        color: '#333333',
+        color: '#ffffff',
+        stroke: '#222222',
+        strokeThickness: 2,
       }).setOrigin(0.5);
 
       highlight.setVisible(car.key === savedCarKey);
