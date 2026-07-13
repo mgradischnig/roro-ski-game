@@ -936,5 +936,151 @@ export class BootScene extends Phaser.Scene {
       gfx.fillStyle(0xffffff, 1);
       gfx.fillRect(2, 2, 2, 2);
     });
+
+    // ===== COASTAL HIGHWAY =====
+
+    // Beach ball obstacle — white sphere with a red wedge and a blue wedge
+    // (classic 3-color beach-ball look), thin outline, small highlight dot
+    g('beach_ball', 16, 16, gfx => {
+      const cx = 8;
+      const cy = 8;
+      const r = 7;
+      gfx.fillStyle(0xffffff, 1);
+      gfx.fillCircle(cx, cy, r);
+      gfx.fillStyle(0xe63946, 1);
+      gfx.slice(cx, cy, r, Phaser.Math.DegToRad(0), Phaser.Math.DegToRad(120), false);
+      gfx.fillPath();
+      gfx.fillStyle(0x2244ff, 1);
+      gfx.slice(cx, cy, r, Phaser.Math.DegToRad(180), Phaser.Math.DegToRad(300), false);
+      gfx.fillPath();
+      gfx.lineStyle(1, 0x333333, 0.6);
+      gfx.strokeCircle(cx, cy, r);
+      gfx.fillStyle(0xffffff, 0.95);
+      gfx.fillCircle(cx - 2, cy - 2, 1.4);
+    });
+
+    // Crab obstacle — red-orange oval body, claw nubs, leg stubs, tiny eyes
+    g('crab', 18, 12, gfx => {
+      // Body
+      gfx.fillStyle(0xdd5533, 1);
+      gfx.fillEllipse(9, 6, 14, 7);
+      // Claw nubs (top-left, top-right)
+      gfx.fillCircle(3, 2, 2.2);
+      gfx.fillCircle(15, 2, 2.2);
+      // Legs — four stubs per side, along the bottom edge
+      gfx.fillStyle(0xbb3f22, 1);
+      for (let i = 0; i < 4; i++) {
+        gfx.fillRect(2 + i * 2, 10, 1.5, 2);
+        gfx.fillRect(10 + i * 2, 10, 1.5, 2);
+      }
+      // Eyes
+      gfx.fillStyle(0x111111, 1);
+      gfx.fillCircle(7, 4, 1);
+      gfx.fillCircle(11, 4, 1);
+    });
+
+    // ===== DESERT RALLY =====
+
+    // Tumbleweed obstacle — tan-brown stroked circle mesh with crossing lines
+    g('tumbleweed', 16, 16, gfx => {
+      gfx.lineStyle(1, 0xb89860, 0.85);
+      gfx.strokeCircle(8, 8, 7);
+      gfx.strokeCircle(6, 9, 5);
+      gfx.strokeCircle(10, 6, 5);
+      gfx.lineBetween(2, 4, 14, 12);
+      gfx.lineBetween(2, 12, 14, 4);
+      gfx.lineBetween(1, 8, 15, 8);
+      gfx.lineBetween(8, 1, 8, 15);
+    });
+
+    // ===== SNOWY PASS =====
+
+    // Ice patch obstacle — flat, on-the-road hazard (pale blue, shine streaks)
+    g('ice_patch', 22, 12, gfx => {
+      gfx.fillStyle(0xbfe8ff, 0.85);
+      gfx.fillEllipse(11, 6, 20, 9);
+      gfx.fillEllipse(7, 7, 12, 6);
+      gfx.fillEllipse(15, 5, 10, 6);
+      gfx.lineStyle(1.5, 0xffffff, 0.7);
+      gfx.lineBetween(4, 5, 10, 3);
+      gfx.lineBetween(12, 8, 18, 6);
+    });
+
+    // Snowman obstacle — two stacked circles, dot eyes/buttons, carrot nose, stick arm
+    g('snowman', 16, 20, gfx => {
+      // Body
+      gfx.fillStyle(0xffffff, 1);
+      gfx.fillCircle(8, 13, 6);
+      // Head
+      gfx.fillCircle(8, 5, 4.5);
+      // Eyes
+      gfx.fillStyle(0x111111, 1);
+      gfx.fillCircle(6.5, 4, 0.8);
+      gfx.fillCircle(9.5, 4, 0.8);
+      // Buttons
+      gfx.fillCircle(8, 10, 0.8);
+      gfx.fillCircle(8, 13, 0.8);
+      gfx.fillCircle(8, 16, 0.8);
+      // Carrot nose
+      gfx.fillStyle(0xff8822, 1);
+      gfx.fillTriangle(8, 5, 13, 6, 8, 7);
+      // Stick arm
+      gfx.lineStyle(1, 0x6b4226, 0.9);
+      gfx.lineBetween(12, 11, 16, 8);
+    });
+
+    // ===== JUNGLE ROAD =====
+
+    // Fallen log obstacle — horizontal brown log, bark lines, cut-end rings
+    g('fallen_log', 24, 12, gfx => {
+      // Log body
+      gfx.fillStyle(0x6b4226, 1);
+      gfx.fillRoundedRect(0, 3, 20, 6, 3);
+      // Bark texture lines
+      gfx.lineStyle(1, 0x4a2e18, 0.6);
+      gfx.lineBetween(2, 4, 2, 8);
+      gfx.lineBetween(6, 3.5, 6, 8.5);
+      gfx.lineBetween(11, 4, 11, 8);
+      gfx.lineBetween(15, 3.5, 15, 8.5);
+      // Cut end (lighter, showing rings) on the right
+      gfx.fillStyle(0xc89666, 1);
+      gfx.fillEllipse(20, 6, 8, 8);
+      gfx.lineStyle(1, 0x8b6240, 0.7);
+      gfx.strokeEllipse(20, 6, 8, 8);
+      gfx.strokeEllipse(20, 6, 5, 5);
+      gfx.strokeEllipse(20, 6, 2.5, 2.5);
+    });
+
+    // Puddle obstacle — flat blue hazard with a lighter inner reflection
+    g('puddle', 22, 12, gfx => {
+      gfx.fillStyle(0x4488cc, 0.8);
+      gfx.fillEllipse(11, 6, 20, 8);
+      gfx.fillEllipse(7, 7, 10, 5);
+      gfx.fillEllipse(15, 5, 9, 5);
+      gfx.fillStyle(0x88bbee, 0.6);
+      gfx.fillEllipse(11, 6, 10, 4);
+    });
+
+    // ===== MARS HIGHWAY =====
+
+    // Mars rover obstacle — light gray body, wheel row, mast + camera, solar panel
+    g('mars_rover', 18, 14, gfx => {
+      // Body box
+      gfx.fillStyle(0xbbbbbb, 1);
+      gfx.fillRoundedRect(3, 5, 12, 6, 2);
+      // Wheel row — 3 darker gray wheels
+      gfx.fillStyle(0x666666, 1);
+      gfx.fillCircle(4, 12, 2);
+      gfx.fillCircle(9, 12, 2);
+      gfx.fillCircle(14, 12, 2);
+      // Mast with small camera head
+      gfx.fillStyle(0x999999, 1);
+      gfx.fillRect(8, 1, 1.5, 5);
+      gfx.fillStyle(0x555555, 1);
+      gfx.fillRect(6.5, 0, 4, 2.5);
+      // Solar panel on the back
+      gfx.fillStyle(0x2244aa, 1);
+      gfx.fillRect(1, 6, 3, 4);
+    });
   }
 }
