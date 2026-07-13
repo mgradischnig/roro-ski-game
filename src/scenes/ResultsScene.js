@@ -25,6 +25,7 @@ export class ResultsScene extends Phaser.Scene {
     this.raceResponses = data.raceResponses || [];
     this.qualifierCoins = data.qualifierCoins || 0;
     this.raceCoins = data.raceCoins || 0;
+    this.gameMode = data?.game || 'ski';
   }
 
   create() {
@@ -172,25 +173,38 @@ export class ResultsScene extends Phaser.Scene {
     }
 
     // --- Buttons ---
-    const btnY = GAME_HEIGHT - 140;
+    const btnY = GAME_HEIGHT - 195;
     this.createButton(GAME_WIDTH / 2, btnY, 'RACE AGAIN', COLORS.UI_DARK, () => {
       this.scene.start('QualifierScene', {
+        playerId: this.playerId,
+        playerName: this.playerName,
+        tier: this.playerTier,
+        game: this.gameMode,
+      });
+    });
+
+    this.createButton(GAME_WIDTH / 2, btnY + 60, 'SWITCH GAME', 0x457b9d, () => {
+      this.scene.start('GameSelectScene', {
         playerId: this.playerId,
         playerName: this.playerName,
         tier: this.playerTier,
       });
     });
 
-    this.createButton(GAME_WIDTH / 2, btnY + 65, 'CHANGE PLAYER', 0x888888, () => {
+    this.createButton(GAME_WIDTH / 2, btnY + 120, 'CHANGE PLAYER', 0x888888, () => {
       this.scene.start('PlayerSelectScene');
     });
 
-    // Keyboard shortcut
-    this.input.keyboard.once('keydown-SPACE', () => {
-      this.scene.start('QualifierScene', {
-        playerId: this.playerId,
-        playerName: this.playerName,
-        tier: this.playerTier,
+    // Keyboard shortcut — delayed so spacebar mashing at the finish (nitro
+    // key in the car game) doesn't skip the podium.
+    this.time.delayedCall(1000, () => {
+      this.input.keyboard.once('keydown-SPACE', () => {
+        this.scene.start('QualifierScene', {
+          playerId: this.playerId,
+          playerName: this.playerName,
+          tier: this.playerTier,
+          game: this.gameMode,
+        });
       });
     });
 
@@ -280,6 +294,7 @@ export class ResultsScene extends Phaser.Scene {
       math_total_in_race: this.mathTotalInRace,
       coins_earned: totalCoins,
       clean_run: this.obstaclesHit === 0,
+      game: this.gameMode,
     }, allResponses);
 
     // Update player stats
@@ -292,7 +307,8 @@ export class ResultsScene extends Phaser.Scene {
     if (isWin) {
       updates.races_won = (currentPlayer?.races_won || 0) + 1;
     }
-    if (finishTimeMs && (!currentPlayer?.best_time_ms || finishTimeMs < currentPlayer.best_time_ms)) {
+    // Car race distances differ from ski — a car time must not clobber the ski PB.
+    if (this.gameMode === 'ski' && finishTimeMs && (!currentPlayer?.best_time_ms || finishTimeMs < currentPlayer.best_time_ms)) {
       updates.best_time_ms = finishTimeMs;
     }
     await PlayerManager.updatePlayerStats(this.playerId, updates);
@@ -303,6 +319,7 @@ export class ResultsScene extends Phaser.Scene {
         clean_run: this.obstaclesHit === 0,
         qualifier_stars: this.qualifierStars,
         finish_position: this.playerPosition,
+        game: this.gameMode,
       };
       const newBadges = await BadgeSystem.checkAndAward(this.playerId, sessionInfo);
       if (newBadges.length > 0) {

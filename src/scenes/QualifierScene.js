@@ -13,6 +13,7 @@ export class QualifierScene extends Phaser.Scene {
     this.playerId = data?.playerId || null;
     this.playerName = data?.playerName || 'RoRo';
     this.playerTier = data?.tier || 1;
+    this.gameMode = data?.game || 'ski';
   }
 
   create() {
@@ -599,85 +600,89 @@ export class QualifierScene extends Phaser.Scene {
       }).setOrigin(0.5);
     }
 
-    // --- World picker ---
-    this.selectedThemeKey = null; // null = random
+    // --- World picker (ski only — car mode has a single fixed track) ---
+    if (this.gameMode === 'car') {
+      this.selectedThemeKey = 'grandprix';
+    } else {
+      this.selectedThemeKey = null; // null = random
 
-    this.add.text(GAME_WIDTH / 2, 370 + safeTop, 'PICK YOUR WORLD', {
-      fontSize: '12px',
-      fontFamily: '"Press Start 2P", monospace',
-      color: '#457b9d',
-    }).setOrigin(0.5);
-
-    // Build picker items: Random + 6 themes
-    // Use first obstacle texture as the recognizable icon
-    const pickerItems = [
-      { key: null, label: 'Random', color: 0x888888, icon: null },
-      ...SLOPE_THEME_KEYS.map(k => ({
-        key: k,
-        label: SLOPE_THEMES[k].name.split(' ')[0],
-        color: SLOPE_THEMES[k].bg.light,
-        icon: SLOPE_THEMES[k].obstacles[0],
-      })),
-    ];
-
-    // 3x3 grid
-    const tileW = 80;
-    const tileH = 65;
-    const gap = 10;
-    const cols = 3;
-    const rowStartY = 410 + safeTop;
-
-    this.worldHighlights = [];
-
-    pickerItems.forEach((item, i) => {
-      const row = Math.floor(i / cols);
-      const col = i % cols;
-      // Center each row (handles partial last row)
-      const rowStart = i - (i % cols);
-      const rowCount = Math.min(cols, pickerItems.length - rowStart);
-      const rowTotalW = rowCount * tileW + (rowCount - 1) * gap;
-      const rowStartX = GAME_WIDTH / 2 - rowTotalW / 2 + tileW / 2;
-      const ix = rowStartX + col * (tileW + gap);
-      const iy = rowStartY + row * (tileH + gap + 14);
-
-      // Colored tile background
-      const tile = this.add.rectangle(ix, iy, tileW, tileH, item.color, 0.9)
-        .setStrokeStyle(2, 0x999999)
-        .setInteractive({ useHandCursor: true });
-
-      // Highlight border (shown for selected)
-      const highlight = this.add.rectangle(ix, iy, tileW + 6, tileH + 6)
-        .setStrokeStyle(3, COLORS.UI_ACCENT)
-        .setFillStyle(0x000000, 0);
-
-      // Icon: obstacle texture or "?" for random
-      if (item.icon) {
-        this.add.image(ix, iy - 6, item.icon).setScale(2.2);
-      } else {
-        this.add.text(ix, iy - 6, '?', {
-          fontSize: '28px',
-          fontFamily: '"Press Start 2P", monospace',
-          color: '#ffffff',
-        }).setOrigin(0.5);
-      }
-
-      // Label below icon
-      this.add.text(ix, iy + tileH / 2 - 6, item.label, {
-        fontSize: '8px',
+      this.add.text(GAME_WIDTH / 2, 370 + safeTop, 'PICK YOUR WORLD', {
+        fontSize: '12px',
         fontFamily: '"Press Start 2P", monospace',
-        color: '#333333',
+        color: '#457b9d',
       }).setOrigin(0.5);
 
-      // Default: first item (Random) is selected
-      highlight.setVisible(i === 0);
-      this.worldHighlights.push(highlight);
+      // Build picker items: Random + 6 themes
+      // Use first obstacle texture as the recognizable icon
+      const pickerItems = [
+        { key: null, label: 'Random', color: 0x888888, icon: null },
+        ...SLOPE_THEME_KEYS.map(k => ({
+          key: k,
+          label: SLOPE_THEMES[k].name.split(' ')[0],
+          color: SLOPE_THEMES[k].bg.light,
+          icon: SLOPE_THEMES[k].obstacles[0],
+        })),
+      ];
 
-      tile.on('pointerup', () => {
-        this.selectedThemeKey = item.key;
-        this.worldHighlights.forEach(h => h.setVisible(false));
-        highlight.setVisible(true);
+      // 3x3 grid
+      const tileW = 80;
+      const tileH = 65;
+      const gap = 10;
+      const cols = 3;
+      const rowStartY = 410 + safeTop;
+
+      this.worldHighlights = [];
+
+      pickerItems.forEach((item, i) => {
+        const row = Math.floor(i / cols);
+        const col = i % cols;
+        // Center each row (handles partial last row)
+        const rowStart = i - (i % cols);
+        const rowCount = Math.min(cols, pickerItems.length - rowStart);
+        const rowTotalW = rowCount * tileW + (rowCount - 1) * gap;
+        const rowStartX = GAME_WIDTH / 2 - rowTotalW / 2 + tileW / 2;
+        const ix = rowStartX + col * (tileW + gap);
+        const iy = rowStartY + row * (tileH + gap + 14);
+
+        // Colored tile background
+        const tile = this.add.rectangle(ix, iy, tileW, tileH, item.color, 0.9)
+          .setStrokeStyle(2, 0x999999)
+          .setInteractive({ useHandCursor: true });
+
+        // Highlight border (shown for selected)
+        const highlight = this.add.rectangle(ix, iy, tileW + 6, tileH + 6)
+          .setStrokeStyle(3, COLORS.UI_ACCENT)
+          .setFillStyle(0x000000, 0);
+
+        // Icon: obstacle texture or "?" for random
+        if (item.icon) {
+          this.add.image(ix, iy - 6, item.icon).setScale(2.2);
+        } else {
+          this.add.text(ix, iy - 6, '?', {
+            fontSize: '28px',
+            fontFamily: '"Press Start 2P", monospace',
+            color: '#ffffff',
+          }).setOrigin(0.5);
+        }
+
+        // Label below icon
+        this.add.text(ix, iy + tileH / 2 - 6, item.label, {
+          fontSize: '8px',
+          fontFamily: '"Press Start 2P", monospace',
+          color: '#333333',
+        }).setOrigin(0.5);
+
+        // Default: first item (Random) is selected
+        highlight.setVisible(i === 0);
+        this.worldHighlights.push(highlight);
+
+        tile.on('pointerup', () => {
+          this.selectedThemeKey = item.key;
+          this.worldHighlights.forEach(h => h.setVisible(false));
+          highlight.setVisible(true);
+        });
       });
-    });
+    }
 
     // START RACE button
     const btnY = GAME_HEIGHT - 90;
@@ -709,10 +714,14 @@ export class QualifierScene extends Phaser.Scene {
   }
 
   startRace(stars, bonus) {
-    // Resolve theme: null = random pick
-    const themeKey = this.selectedThemeKey || Phaser.Math.RND.pick(SLOPE_THEME_KEYS);
+    const isCar = this.gameMode === 'car';
+    const targetScene = isCar ? 'CarRaceScene' : 'RaceScene';
+    // Resolve theme: car mode always uses the fixed selection; ski null = random pick
+    const themeKey = isCar
+      ? this.selectedThemeKey
+      : (this.selectedThemeKey || Phaser.Math.RND.pick(SLOPE_THEME_KEYS));
 
-    this.scene.start('RaceScene', {
+    this.scene.start(targetScene, {
       playerId: this.playerId,
       playerName: this.playerName,
       tier: this.playerTier,
@@ -721,6 +730,7 @@ export class QualifierScene extends Phaser.Scene {
       qualifierResponses: this.questionResponses,
       qualifierCoins: this.coinsEarned,
       themeKey,
+      game: this.gameMode,
     });
   }
 }

@@ -5,6 +5,7 @@ import { PlayerSelectScene } from './scenes/PlayerSelectScene.js';
 import { GameSelectScene } from './scenes/GameSelectScene.js';
 import { QualifierScene } from './scenes/QualifierScene.js';
 import { RaceScene } from './scenes/RaceScene.js';
+import { CarRaceScene } from './scenes/CarRaceScene.js';
 import { ResultsScene } from './scenes/ResultsScene.js';
 import { ParentDashboardScene } from './scenes/ParentDashboardScene.js';
 
@@ -54,7 +55,7 @@ const config = {
       debug: false,
     },
   },
-  scene: [BootScene, PlayerSelectScene, GameSelectScene, QualifierScene, RaceScene, ResultsScene, ParentDashboardScene],
+  scene: [BootScene, PlayerSelectScene, GameSelectScene, QualifierScene, RaceScene, CarRaceScene, ResultsScene, ParentDashboardScene],
   input: {
     activePointers: 2,
   },
