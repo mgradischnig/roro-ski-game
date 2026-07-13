@@ -14,6 +14,7 @@ import {
 import {
   CAR_TIER_DIFFICULTY, TRAFFIC_SPEED_RATIO, CAR_GEOMETRY, CAR_PLAYER_BOTTOM_OFFSET,
   TRACK_THEMES, TRACK_THEME_KEYS, AI_RACERS, NITRO,
+  CARS, POLE_POSITION_HEAD_START,
 } from '../config/carConfig.js';
 import { AIController } from '../systems/AIController.js';
 import { MathEngine } from '../systems/MathEngine.js';
@@ -37,6 +38,8 @@ export class CarRaceScene extends Phaser.Scene {
     this.qualifierCoins = data?.qualifierCoins || 0;
     this.themeKey = data?.themeKey || null;
     this.gameMode = data?.game || 'car';
+    this.polePosition = data?.polePosition || false;
+    this.carKey = data?.carKey || 'red_rocket';
   }
 
   create() {
@@ -115,10 +118,24 @@ export class CarRaceScene extends Phaser.Scene {
     this.finishLineSpawned = false;
 
     // --- Player ---
-    this.player = this.physics.add.sprite(PLAYER_START_X, this.playerY, 'car_player');
+    const carConfig = CARS.find(c => c.key === this.carKey) || CARS[0];
+    this.player = this.physics.add.sprite(PLAYER_START_X, this.playerY, carConfig.texture);
     this.player.setScale(2.0);
     this.player.setDepth(10);
     this.player.body.setSize(14, 24);
+
+    // Police flicker: alternate the roof light bar between red-left and blue-left
+    if (this.carKey === 'police') {
+      let policeFlicker = false;
+      this.time.addEvent({
+        delay: 350,
+        loop: true,
+        callback: () => {
+          policeFlicker = !policeFlicker;
+          this.player.setTexture(policeFlicker ? 'car_police_alt' : 'car_police');
+        },
+      });
+    }
 
     // Constrain player to the obstacle zone so they can't dodge by hugging edges
     this.physics.world.setBounds(
@@ -209,9 +226,34 @@ export class CarRaceScene extends Phaser.Scene {
         aheadSign: CAR_GEOMETRY.aheadSign,
         margin: CAR_GEOMETRY.margin,
       });
+
+      // Pole position reward: AI starts with a distance deficit (head start
+      // for the player). Kept <= RUBBER_BAND_DEAD_ZONE so it isn't
+      // immediately eroded by the AI catch-up rubber-banding.
+      if (this.polePosition) {
+        controller.distance = -POLE_POSITION_HEAD_START;
+      }
+
       this.aiControllers.push(controller);
       this.aiSprites.push(sprite);
     });
+
+    // Pole position flavor text over the player during the countdown
+    if (this.polePosition) {
+      const poleText = this.add.text(this.player.x, this.playerY - 40, 'POLE POSITION!', {
+        fontSize: '10px',
+        fontFamily: '"Press Start 2P", monospace',
+        color: '#f4a261',
+      }).setOrigin(0.5).setDepth(30);
+
+      this.tweens.add({
+        targets: poleText,
+        alpha: 0,
+        delay: 1500,
+        duration: 500,
+        onComplete: () => poleText.destroy(),
+      });
+    }
   }
 
   // =====================

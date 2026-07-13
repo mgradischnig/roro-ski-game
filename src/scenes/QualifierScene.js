@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS, SLOPE_THEMES, SLOPE_THEME_KEYS } from '../config/gameConfig.js';
 import { QUALIFIER, COINS, MATH_TIERS } from '../config/mathConfig.js';
+import {
+  TRACK_THEMES, TRACK_THEME_KEYS, CAR_QUALIFIER_REWARDS, CARS,
+} from '../config/carConfig.js';
 import { MathEngine } from '../systems/MathEngine.js';
 import { FrameRenderer } from '../ui/FrameRenderer.js';
 
@@ -39,8 +42,10 @@ export class QualifierScene extends Phaser.Scene {
 
     // --- Header ---
     const tierConfig = MATH_TIERS[this.playerTier];
-    this.add.text(GAME_WIDTH / 2, 30 + safeTop, 'GET READY!', {
-      fontSize: '18px',
+    const isCarMode = this.gameMode === 'car';
+
+    this.add.text(GAME_WIDTH / 2, 30 + safeTop, isCarMode ? 'QUALIFYING ROUND!' : 'GET READY!', {
+      fontSize: isCarMode ? '16px' : '18px',
       fontFamily: '"Press Start 2P", monospace',
       color: '#1d3557',
     }).setOrigin(0.5);
@@ -50,6 +55,14 @@ export class QualifierScene extends Phaser.Scene {
       fontFamily: '"Press Start 2P", monospace',
       color: '#457b9d',
     }).setOrigin(0.5);
+
+    if (isCarMode) {
+      this.add.text(GAME_WIDTH / 2, 66 + safeTop, 'Earn your grid spot!', {
+        fontSize: '9px',
+        fontFamily: '"Press Start 2P", monospace',
+        color: '#e76f51',
+      }).setOrigin(0.5);
+    }
 
     // Question counter
     this.counterText = this.add.text(GAME_WIDTH - 20, 30 + safeTop, '', {
@@ -582,7 +595,10 @@ export class QualifierScene extends Phaser.Scene {
 
     // Show advantage
     let advantageText = 'No bonus this time';
-    if (bonus.shield) {
+    if (this.gameMode === 'car') {
+      const carReward = CAR_QUALIFIER_REWARDS[stars] || CAR_QUALIFIER_REWARDS[0];
+      advantageText = carReward.label || 'No bonus this time';
+    } else if (bonus.shield) {
       advantageText = `Shield earned!`;
     }
     this.add.text(GAME_WIDTH / 2, 290 + safeTop, advantageText, {
@@ -600,19 +616,26 @@ export class QualifierScene extends Phaser.Scene {
       }).setOrigin(0.5);
     }
 
-    // --- World picker (ski only — car mode has a single fixed track) ---
+    // --- Track/world picker ---
+    this.selectedThemeKey = null; // null = random
+
     if (this.gameMode === 'car') {
-      this.selectedThemeKey = 'grandprix';
+      // Car mode: Random + the 2 car tracks
+      const trackItems = [
+        { key: null, label: 'Random', color: 0x888888, icon: null },
+        ...TRACK_THEME_KEYS.map(k => ({
+          key: k,
+          label: TRACK_THEMES[k].name.split(' ')[0],
+          color: TRACK_THEMES[k].bg.light,
+          icon: TRACK_THEMES[k].obstacles[0],
+        })),
+      ];
+      this.renderThemePicker('PICK YOUR TRACK', trackItems, safeTop);
+
+      // --- Car picker (car mode only) ---
+      this.renderCarPicker(safeTop);
     } else {
-      this.selectedThemeKey = null; // null = random
-
-      this.add.text(GAME_WIDTH / 2, 370 + safeTop, 'PICK YOUR WORLD', {
-        fontSize: '12px',
-        fontFamily: '"Press Start 2P", monospace',
-        color: '#457b9d',
-      }).setOrigin(0.5);
-
-      // Build picker items: Random + 6 themes
+      // Ski mode: Random + 8 themes
       // Use first obstacle texture as the recognizable icon
       const pickerItems = [
         { key: null, label: 'Random', color: 0x888888, icon: null },
@@ -623,65 +646,7 @@ export class QualifierScene extends Phaser.Scene {
           icon: SLOPE_THEMES[k].obstacles[0],
         })),
       ];
-
-      // 3x3 grid
-      const tileW = 80;
-      const tileH = 65;
-      const gap = 10;
-      const cols = 3;
-      const rowStartY = 410 + safeTop;
-
-      this.worldHighlights = [];
-
-      pickerItems.forEach((item, i) => {
-        const row = Math.floor(i / cols);
-        const col = i % cols;
-        // Center each row (handles partial last row)
-        const rowStart = i - (i % cols);
-        const rowCount = Math.min(cols, pickerItems.length - rowStart);
-        const rowTotalW = rowCount * tileW + (rowCount - 1) * gap;
-        const rowStartX = GAME_WIDTH / 2 - rowTotalW / 2 + tileW / 2;
-        const ix = rowStartX + col * (tileW + gap);
-        const iy = rowStartY + row * (tileH + gap + 14);
-
-        // Colored tile background
-        const tile = this.add.rectangle(ix, iy, tileW, tileH, item.color, 0.9)
-          .setStrokeStyle(2, 0x999999)
-          .setInteractive({ useHandCursor: true });
-
-        // Highlight border (shown for selected)
-        const highlight = this.add.rectangle(ix, iy, tileW + 6, tileH + 6)
-          .setStrokeStyle(3, COLORS.UI_ACCENT)
-          .setFillStyle(0x000000, 0);
-
-        // Icon: obstacle texture or "?" for random
-        if (item.icon) {
-          this.add.image(ix, iy - 6, item.icon).setScale(2.2);
-        } else {
-          this.add.text(ix, iy - 6, '?', {
-            fontSize: '28px',
-            fontFamily: '"Press Start 2P", monospace',
-            color: '#ffffff',
-          }).setOrigin(0.5);
-        }
-
-        // Label below icon
-        this.add.text(ix, iy + tileH / 2 - 6, item.label, {
-          fontSize: '8px',
-          fontFamily: '"Press Start 2P", monospace',
-          color: '#333333',
-        }).setOrigin(0.5);
-
-        // Default: first item (Random) is selected
-        highlight.setVisible(i === 0);
-        this.worldHighlights.push(highlight);
-
-        tile.on('pointerup', () => {
-          this.selectedThemeKey = item.key;
-          this.worldHighlights.forEach(h => h.setVisible(false));
-          highlight.setVisible(true);
-        });
-      });
+      this.renderThemePicker('PICK YOUR WORLD', pickerItems, safeTop);
     }
 
     // START RACE button
@@ -713,24 +678,177 @@ export class QualifierScene extends Phaser.Scene {
     this.input.keyboard.once('keydown-SPACE', () => this.startRace(stars, bonus));
   }
 
+  // Shared tile-grid renderer for the ski world picker and the car track
+  // picker. Wires this.selectedThemeKey and this.worldHighlights; visuals
+  // are pixel-identical to the original ski-only implementation.
+  renderThemePicker(titleText, items, safeTop) {
+    this.add.text(GAME_WIDTH / 2, 370 + safeTop, titleText, {
+      fontSize: '12px',
+      fontFamily: '"Press Start 2P", monospace',
+      color: '#457b9d',
+    }).setOrigin(0.5);
+
+    // 3-column grid (wraps to further rows if more items are supplied)
+    const tileW = 80;
+    const tileH = 65;
+    const gap = 10;
+    const cols = 3;
+    const rowStartY = 410 + safeTop;
+
+    this.worldHighlights = [];
+
+    items.forEach((item, i) => {
+      const row = Math.floor(i / cols);
+      const col = i % cols;
+      // Center each row (handles partial last row)
+      const rowStart = i - (i % cols);
+      const rowCount = Math.min(cols, items.length - rowStart);
+      const rowTotalW = rowCount * tileW + (rowCount - 1) * gap;
+      const rowStartX = GAME_WIDTH / 2 - rowTotalW / 2 + tileW / 2;
+      const ix = rowStartX + col * (tileW + gap);
+      const iy = rowStartY + row * (tileH + gap + 14);
+
+      // Colored tile background
+      const tile = this.add.rectangle(ix, iy, tileW, tileH, item.color, 0.9)
+        .setStrokeStyle(2, 0x999999)
+        .setInteractive({ useHandCursor: true });
+
+      // Highlight border (shown for selected)
+      const highlight = this.add.rectangle(ix, iy, tileW + 6, tileH + 6)
+        .setStrokeStyle(3, COLORS.UI_ACCENT)
+        .setFillStyle(0x000000, 0);
+
+      // Icon: obstacle texture or "?" for random
+      if (item.icon) {
+        this.add.image(ix, iy - 6, item.icon).setScale(2.2);
+      } else {
+        this.add.text(ix, iy - 6, '?', {
+          fontSize: '28px',
+          fontFamily: '"Press Start 2P", monospace',
+          color: '#ffffff',
+        }).setOrigin(0.5);
+      }
+
+      // Label below icon
+      this.add.text(ix, iy + tileH / 2 - 6, item.label, {
+        fontSize: '8px',
+        fontFamily: '"Press Start 2P", monospace',
+        color: '#333333',
+      }).setOrigin(0.5);
+
+      // Default: first item (Random) is selected
+      highlight.setVisible(i === 0);
+      this.worldHighlights.push(highlight);
+
+      tile.on('pointerup', () => {
+        this.selectedThemeKey = item.key;
+        this.worldHighlights.forEach(h => h.setVisible(false));
+        highlight.setVisible(true);
+      });
+    });
+  }
+
+  // Car mode only: cosmetic car picker row, rendered below the track picker.
+  // Persists the choice per-player in localStorage (default 'red_rocket').
+  renderCarPicker(safeTop) {
+    const trackTitleY = 370 + safeTop;
+    const titleY = trackTitleY + 150;
+
+    this.add.text(GAME_WIDTH / 2, titleY, 'PICK YOUR CAR', {
+      fontSize: '12px',
+      fontFamily: '"Press Start 2P", monospace',
+      color: '#457b9d',
+    }).setOrigin(0.5);
+
+    // Restore saved choice (default 'red_rocket')
+    let savedCarKey = 'red_rocket';
+    try {
+      const stored = localStorage.getItem('roro_car_' + this.playerId);
+      if (stored && CARS.some(c => c.key === stored)) {
+        savedCarKey = stored;
+      }
+    } catch (e) {
+      // Private browsing or storage disabled — default stands
+    }
+    this.selectedCarKey = savedCarKey;
+
+    const tileW = 60;
+    const tileH = 55;
+    const gap = 14;
+    const rowY = titleY + 40;
+    const totalW = CARS.length * tileW + (CARS.length - 1) * gap;
+    const startX = GAME_WIDTH / 2 - totalW / 2 + tileW / 2;
+
+    this.carHighlights = [];
+
+    CARS.forEach((car, i) => {
+      const ix = startX + i * (tileW + gap);
+      const iy = rowY;
+
+      // Tile background
+      const tile = this.add.rectangle(ix, iy, tileW, tileH, 0xd4eaf0, 0.9)
+        .setStrokeStyle(2, 0x999999)
+        .setInteractive({ useHandCursor: true });
+
+      // Highlight border (shown for selected)
+      const highlight = this.add.rectangle(ix, iy, tileW + 6, tileH + 6)
+        .setStrokeStyle(3, COLORS.UI_ACCENT)
+        .setFillStyle(0x000000, 0);
+
+      // Icon
+      this.add.image(ix, iy - 8, car.texture).setScale(1.8);
+
+      // Label below icon
+      this.add.text(ix, iy + tileH / 2 - 6, car.name, {
+        fontSize: '7px',
+        fontFamily: '"Press Start 2P", monospace',
+        color: '#333333',
+      }).setOrigin(0.5);
+
+      highlight.setVisible(car.key === savedCarKey);
+      this.carHighlights.push(highlight);
+
+      tile.on('pointerup', () => {
+        this.selectedCarKey = car.key;
+        this.carHighlights.forEach(h => h.setVisible(false));
+        highlight.setVisible(true);
+        try {
+          localStorage.setItem('roro_car_' + this.playerId, car.key);
+        } catch (e) {
+          // Private browsing or storage disabled — ignore
+        }
+      });
+    });
+  }
+
   startRace(stars, bonus) {
     const isCar = this.gameMode === 'car';
     const targetScene = isCar ? 'CarRaceScene' : 'RaceScene';
-    // Resolve theme: car mode always uses the fixed selection; ski null = random pick
+    // Resolve theme: null = random pick from the mode's theme keys
     const themeKey = isCar
-      ? this.selectedThemeKey
+      ? (this.selectedThemeKey || Phaser.Math.RND.pick(TRACK_THEME_KEYS))
       : (this.selectedThemeKey || Phaser.Math.RND.pick(SLOPE_THEME_KEYS));
 
-    this.scene.start(targetScene, {
+    const sceneData = {
       playerId: this.playerId,
       playerName: this.playerName,
       tier: this.playerTier,
       stars,
-      shield: bonus.shield,
       qualifierResponses: this.questionResponses,
       qualifierCoins: this.coinsEarned,
       themeKey,
       game: this.gameMode,
-    });
+    };
+
+    if (isCar) {
+      const rewards = CAR_QUALIFIER_REWARDS[stars] || CAR_QUALIFIER_REWARDS[0];
+      sceneData.shield = rewards.armor;
+      sceneData.polePosition = rewards.polePosition;
+      sceneData.carKey = this.selectedCarKey || 'red_rocket';
+    } else {
+      sceneData.shield = bonus.shield;
+    }
+
+    this.scene.start(targetScene, sceneData);
   }
 }
