@@ -276,4 +276,91 @@ export const PlayerManager = {
     }
     return true;
   },
+
+  /**
+   * Course difficulty to race at (1-4), independent of the maths tier.
+   *
+   * race_difficulty is NULL by default, meaning "auto": follow current_tier,
+   * which is the historical behaviour. A parent can pin it so a child who is
+   * strong at maths but struggling on the slope isn't forced onto the hardest
+   * course by their maths progress.
+   */
+  getRaceDifficulty(player) {
+    const explicit = player?.race_difficulty;
+    if (explicit >= 1 && explicit <= 4) return explicit;
+    return Math.min(Math.max(player?.current_tier || 1, 1), 4);
+  },
+
+  /** Silent comeback assist, 0-3. See updateAssistLevel(). */
+  getAssistLevel(player) {
+    return Math.min(Math.max(player?.assist_level || 0, 0), 3);
+  },
+
+  /**
+   * Pin the course difficulty, or pass null to return it to auto.
+   */
+  async setRaceDifficulty(playerId, difficulty) {
+    await this.updatePlayerStats(playerId, { race_difficulty: difficulty });
+    if (currentPlayer && currentPlayer.id === playerId) {
+      currentPlayer.race_difficulty = difficulty;
+    }
+  },
+
+  /**
+   * Silently adjust the comeback assist level (0-3) after a race, based on
+   * the player's last 3 sessions across BOTH games (frustration on the ski
+   * hill and the go-kart track isn't game-specific).
+   *
+   * This is deliberately never surfaced to the player — a child shown
+   * "difficulty lowered" learns the wrong lesson. It's a quiet nudge only:
+   * two or more bottom-of-the-pack finishes (position >= 3) in the last 3
+   * races raises the assist by one level, and it's handed back automatically
+   * (lowered by one) once they start winning again (two or more 1st-place
+   * finishes in the last 3). Anything in between leaves it alone.
+   *
+   * @param {string} playerId
+   * @returns {number} the assist level now in effect (0-3)
+   */
+  async updateAssistLevel(playerId) {
+    const { data: sessions, error } = await supabase
+      .from('sessions')
+      .select('finish_position')
+      .eq('player_id', playerId)
+      .not('finish_position', 'is', null)
+      .order('played_at', { ascending: false })
+      .limit(3);
+
+    // Read the authoritative current level from the DB (not the in-memory
+    // cache, which may be stale) — this is also what we return if there's
+    // not enough race history yet to act on.
+    const { data: playerRow } = await supabase
+      .from('players')
+      .select('assist_level')
+      .eq('id', playerId)
+      .single();
+    const current = Math.min(Math.max(playerRow?.assist_level || 0, 0), 3);
+
+    // A new player shouldn't get assisted off two races.
+    if (error || !sessions || sessions.length < 3) {
+      return current;
+    }
+
+    const strugglingFinishes = sessions.filter(s => s.finish_position >= 3).length;
+    const winningFinishes = sessions.filter(s => s.finish_position === 1).length;
+
+    let next = current;
+    if (strugglingFinishes >= 2) {
+      next = Math.min(current + 1, 3);
+    } else if (winningFinishes >= 2) {
+      next = Math.max(current - 1, 0);
+    }
+
+    if (next === current) return current;
+
+    await this.updatePlayerStats(playerId, { assist_level: next });
+    if (currentPlayer && currentPlayer.id === playerId) {
+      currentPlayer.assist_level = next;
+    }
+    return next;
+  },
 };

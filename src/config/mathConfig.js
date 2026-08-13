@@ -78,7 +78,10 @@ export const ADAPTIVE = {
   ADVANCE_ACCURACY: 0.9,       // 90% over last 20 to advance
   ADVANCE_MIN_QUESTIONS: 20,
   ADVANCE_MAX_RESPONSE_MS: 5000,
-  DROP_ACCURACY: 0.5,          // Below 50% over last 10 to drop
+  DROP_ACCURACY: 0.65,         // Below 65% over last 10 to drop. Was 0.5, which
+                               // sat below the accuracy of a player who is
+                               // plainly struggling (62.7% at tier 4), so the
+                               // drop never fired and they stayed stuck.
   DROP_MIN_QUESTIONS: 10,
   WRONG_STREAK_THRESHOLD: 3,   // 3 wrong in a row → easier format
   TARGET_ACCURACY: 0.85,       // Ideal success rate
@@ -95,9 +98,12 @@ export const VISUAL_FADING = {
 export const QUALIFIER = {
   QUESTIONS_PER_SESSION: 5,
   STAR_THRESHOLDS: {
-    // Stars based on correct answers out of QUESTIONS_PER_SESSION
+    // Stars based on correct answers out of QUESTIONS_PER_SESSION.
+    // Shield drops at 4 stars, not 5 — at 5 it almost never landed (a
+    // struggling player's tier-4 star average is ~3.3), so the one mechanic
+    // that softens a bad race was unreachable exactly when it was needed.
     5: { shield: true },
-    4: { shield: false },
+    4: { shield: true },
     3: { shield: false },
     2: { shield: false },
     1: { shield: false },

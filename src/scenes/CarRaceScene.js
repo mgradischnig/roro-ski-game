@@ -9,6 +9,8 @@ import {
   SPEED_RECOVERY_RATE, CLEAN_SKIING_ACCEL, SLOW_SCROLL_SPEED,
   TOUCH_ZONE_LEFT, TOUCH_ZONE_RIGHT,
   COLORS,
+  spawnDistanceFor,
+  applyAssist,
 } from '../config/gameConfig.js';
 import {
   CAR_TIER_DIFFICULTY, TRAFFIC_SPEED_RATIO, CAR_GEOMETRY, CAR_PLAYER_BOTTOM_OFFSET,
@@ -17,6 +19,7 @@ import {
   CORRIDOR_HALF_WIDTH, roadCenterAt, SPIN_HAZARDS, OIL_SPAWN_CHANCE,
 } from '../config/carConfig.js';
 import { AIController } from '../systems/AIController.js';
+import { PlayerManager } from '../systems/PlayerManager.js';
 import { SoundFX } from '../systems/SoundFX.js';
 import { MathEngine } from '../systems/MathEngine.js';
 import { MathPopup } from '../ui/MathPopup.js';
@@ -48,14 +51,26 @@ export class CarRaceScene extends Phaser.Scene {
     const themeKey = this.themeKey || Phaser.Math.RND.pick(TRACK_THEME_KEYS);
     this.theme = TRACK_THEMES[themeKey];
 
-    // --- Tier-based difficulty ---
-    const tierDiff = CAR_TIER_DIFFICULTY[this.playerTier] || CAR_TIER_DIFFICULTY[2];
+    // --- Course difficulty (independent of the maths tier) + comeback assist ---
+    // Falls back to the maths tier when nobody is signed in, which is the
+    // pre-split behaviour for a guest run.
+    const currentPlayer = PlayerManager.getCurrentPlayer();
+    this.raceDifficulty = currentPlayer
+      ? PlayerManager.getRaceDifficulty(currentPlayer)
+      : this.playerTier;
+    this.assistLevel = currentPlayer ? PlayerManager.getAssistLevel(currentPlayer) : 0;
+
+    const tierDiff = CAR_TIER_DIFFICULTY[this.raceDifficulty] || CAR_TIER_DIFFICULTY[2];
+    const assist = applyAssist(tierDiff, this.assistLevel);
+
     this.tierScrollSpeed = tierDiff.baseScrollSpeed;
     this.tierMaxCleanSpeed = tierDiff.maxCleanSpeed;
     this.tierBoostSpeed = tierDiff.boostScrollSpeed;
     this.tierRaceDistance = tierDiff.raceDistance;
-    this.tierMaxObstacles = tierDiff.maxObstaclesPerSpawn;
-    this.tierAIBaseSpeed = tierDiff.baseScrollSpeed * tierDiff.aiSpeedScale;
+    this.tierMaxObstacles = assist.maxObstacles;
+    this.tierAIBaseSpeed = assist.aiBaseSpeed;
+    this.assistRubberBandAheadMax = assist.rubberBandAheadMax;
+    this.assistSpacingMultiplier = assist.spacingMultiplier;
 
     // --- State ---
     this.scrollSpeed = this.tierScrollSpeed;
@@ -113,18 +128,14 @@ export class CarRaceScene extends Phaser.Scene {
 
     // --- Obstacles group (static hazards + traffic share this group) ---
     this.obstacles = this.physics.add.group();
-    this.obstacleTimer = this.time.addEvent({
-      delay: tierDiff.obstacleSpawnInterval,
-      callback: this.spawnObstacle,
-      callbackScope: this,
-      loop: true,
-    });
-    this.trafficTimer = this.time.addEvent({
-      delay: tierDiff.trafficSpawnInterval,
-      callback: this.spawnTraffic,
-      callbackScope: this,
-      loop: true,
-    });
+    this.obstacleSpawnDistance = spawnDistanceFor(
+      tierDiff.obstacleSpawnInterval, tierDiff.maxCleanSpeed
+    ) * this.assistSpacingMultiplier;
+    this.nextObstacleSpawnAt = this.obstacleSpawnDistance;
+    this.trafficSpawnDistance = spawnDistanceFor(
+      tierDiff.trafficSpawnInterval, tierDiff.maxCleanSpeed
+    ) * this.assistSpacingMultiplier;
+    this.nextTrafficSpawnAt = this.trafficSpawnDistance;
 
     // --- Pit zones (math questions that bank nitro charges) ---
     this.pitZones = this.physics.add.group();
@@ -246,6 +257,8 @@ export class CarRaceScene extends Phaser.Scene {
           return { minX: c - CORRIDOR_HALF_WIDTH, maxX: c + CORRIDOR_HALF_WIDTH };
         },
       });
+
+      controller.rubberBandAheadMax = this.assistRubberBandAheadMax;
 
       // Pole position reward: AI starts with a distance deficit (head start
       // for the player). Kept <= RUBBER_BAND_DEAD_ZONE so it isn't
@@ -680,7 +693,7 @@ export class CarRaceScene extends Phaser.Scene {
     if (hazardType === 'traffic') {
       this.targetSpeed = SLOW_SCROLL_SPEED; // big hit
     } else {
-      this.targetSpeed = 90; // milder hit
+      this.targetSpeed = 130; // milder hit
     }
 
     // Camera shake (noticeable but brief)
@@ -1068,8 +1081,6 @@ export class CarRaceScene extends Phaser.Scene {
     this.raceFinished = true;
     this.playerFinishTime = this.raceTime;
     this.targetSpeed = 0;
-    this.obstacleTimer.remove();
-    this.trafficTimer.remove();
     this.sfx.stopEngine();
 
     const H = this.scale.height;
@@ -1221,6 +1232,16 @@ export class CarRaceScene extends Phaser.Scene {
     // --- Track distance ---
     if (!this.raceFinished) {
       this.distanceTraveled += this.scrollSpeed * dt;
+    }
+
+    // --- Spawn obstacles/traffic by distance travelled, not elapsed time ---
+    if (!this.raceFinished && this.distanceTraveled >= this.nextObstacleSpawnAt) {
+      this.spawnObstacle();
+      this.nextObstacleSpawnAt = this.distanceTraveled + this.obstacleSpawnDistance;
+    }
+    if (!this.raceFinished && this.distanceTraveled >= this.nextTrafficSpawnAt) {
+      this.spawnTraffic();
+      this.nextTrafficSpawnAt = this.distanceTraveled + this.trafficSpawnDistance;
     }
 
     // --- Scroll background DOWN ---

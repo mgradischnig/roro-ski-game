@@ -12,14 +12,63 @@ export const PLAYER_SIZE = 24;
 export const BASE_SCROLL_SPEED = 150;    // Starting downhill speed (px/sec)
 export const MAX_CLEAN_SPEED = 185;      // Max speed from clean skiing bonus (~2.3s to reach)
 export const BOOST_SCROLL_SPEED = 230;   // Speed boost from correct math answer
-export const SLOW_SCROLL_SPEED = 40;     // Speed when hit an obstacle — crashes really hurt
-export const SPEED_RECOVERY_RATE = 35;   // How fast speed recovers (px/sec²) — slower rebuild
+export const SLOW_SCROLL_SPEED = 95;     // Speed when hit an obstacle — crashes still hurt but no longer bottom out
+export const SPEED_RECOVERY_RATE = 55;   // How fast speed recovers (px/sec²) — quicker rebuild
 export const CLEAN_SKIING_ACCEL = 15;    // Clean skiing acceleration (px/sec²) — noticeable reward
+
+/**
+ * Convert a tier's spawn cadence (ms) into a spawn DISTANCE interval (px).
+ *
+ * Obstacles spawn on a cadence but travel at the player's current speed, so a
+ * time-based timer piled hazards up whenever the player slowed after a crash —
+ * one crash roughly doubled on-screen density and caused the next. Anchoring
+ * the cadence to maxCleanSpeed leaves a clean run's density exactly as it was
+ * and makes a crashed run no denser than a clean one.
+ */
+export function spawnDistanceFor(intervalMs, maxCleanSpeed) {
+  return (intervalMs / 1000) * maxCleanSpeed;
+}
 
 // Rubber-banding (keeps races close and exciting)
 export const RUBBER_BAND_DEAD_ZONE = 150;  // No rubber-banding within this distance gap
 export const RUBBER_BAND_AI_AHEAD_MAX = 0.08;  // Max slowdown when AI is far ahead (8%)
 export const RUBBER_BAND_AI_BEHIND_MAX = 0.05; // Max speedup when AI is far behind (5%)
+
+/**
+ * Silent comeback assist, level 0-3.
+ *
+ * Raised automatically when a player keeps finishing 3rd/4th, and handed back
+ * as soon as they start winning again. Deliberately invisible: a child told
+ * the game was made easier for them learns the wrong thing from it, so the
+ * knobs are chosen to be felt rather than seen — a little more room between
+ * hazards, and a rival who is fractionally slower and brakes harder when
+ * they get far ahead.
+ */
+export const ASSIST = {
+  MAX_LEVEL: 3,
+  AI_SLOWDOWN_PER_LEVEL: 0.03,     // rival base speed, to -9% at L3
+  SPAWN_SPACING_PER_LEVEL: 0.10,   // gap between hazards, to +30% at L3
+  THIN_SPAWNS_FROM_LEVEL: 2,       // L2+: one fewer obstacle per spawn group
+  CATCHUP_BONUS_PER_LEVEL: 0.033,  // AI-ahead brake, 8% to ~18% at L3
+};
+
+/**
+ * Resolve a tier's difficulty numbers for a given assist level.
+ * Shared by both race scenes so ski and car assist identically.
+ */
+export function applyAssist(tierDiff, assistLevel) {
+  const L = Math.min(Math.max(assistLevel || 0, 0), ASSIST.MAX_LEVEL);
+  return {
+    level: L,
+    aiBaseSpeed: tierDiff.baseScrollSpeed * tierDiff.aiSpeedScale
+      * (1 - ASSIST.AI_SLOWDOWN_PER_LEVEL * L),
+    maxObstacles: Math.max(
+      1, tierDiff.maxObstaclesPerSpawn - (L >= ASSIST.THIN_SPAWNS_FROM_LEVEL ? 1 : 0)
+    ),
+    spacingMultiplier: 1 + ASSIST.SPAWN_SPACING_PER_LEVEL * L,
+    rubberBandAheadMax: RUBBER_BAND_AI_AHEAD_MAX + ASSIST.CATCHUP_BONUS_PER_LEVEL * L,
+  };
+}
 
 // Obstacles
 export const OBSTACLE_SPAWN_INTERVAL = 1200; // ms between obstacle spawns
