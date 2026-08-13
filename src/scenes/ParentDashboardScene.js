@@ -12,7 +12,8 @@ import { supabase } from '../systems/SupabaseClient.js';
  * Features:
  * - Scrollable content area (touch drag / mouse wheel)
  * - Per-child stats: overview, math progress, badges, daily activity
- * - Controls: change maths tier, change race difficulty, add player, reset progress
+ * - Controls: change maths tier, set a starting race difficulty (adapts on its
+ *   own after that), add player, reset progress
  */
 export class ParentDashboardScene extends Phaser.Scene {
   constructor() {
@@ -260,7 +261,7 @@ export class ParentDashboardScene extends Phaser.Scene {
       this.addContentText(25, cy, `Maths: ${player.current_tier} — ${tierName}`, '#457b9d', '10px');
       cy += 28;
       const rd = PlayerManager.getRaceDifficulty(player);
-      const rdLabel = player.race_difficulty ? `${rd}` : `${rd} (auto)`;
+      const rdLabel = player.race_difficulty ? `${rd}` : `${rd} (from maths)`;
       const assist = PlayerManager.getAssistLevel(player);
       this.addContentText(25, cy, `Race: ${rdLabel}${assist ? `  Assist: ${assist}` : ''}`, '#457b9d', '10px');
       cy += 28;
@@ -603,11 +604,11 @@ export class ParentDashboardScene extends Phaser.Scene {
 
     const dialog = this.addFixed(
       this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2,
-        320, 320, 0xffffff).setStrokeStyle(2, COLORS.UI_DARK)
+        320, 350, 0xffffff).setStrokeStyle(2, COLORS.UI_DARK)
     );
 
     const title = this.addFixed(
-      this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 125,
+      this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 145,
         `Race difficulty\nfor ${player.name}`, {
           fontSize: '11px',
           fontFamily: '"Press Start 2P", monospace',
@@ -617,16 +618,25 @@ export class ParentDashboardScene extends Phaser.Scene {
         }).setOrigin(0.5)
     );
 
+    const subtitle = this.addFixed(
+      this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 112,
+        'Adjusts itself as they play', {
+          fontSize: '8px',
+          fontFamily: '"Press Start 2P", monospace',
+          color: '#888888',
+        }).setOrigin(0.5)
+    );
+
     const isAutoActive = player.race_difficulty == null;
     const autoBtn = this.addFixed(
-      this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, 260, 40,
+      this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 78, 260, 40,
         isAutoActive ? COLORS.UI_ACCENT : 0xeeeeee)
         .setInteractive({ useHandCursor: true })
         .setStrokeStyle(2, isAutoActive ? COLORS.UI_DARK : 0xcccccc)
     );
 
     const autoBtnText = this.addFixed(
-      this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, 'AUTO (= MATHS TIER)', {
+      this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 78, 'RESET TO MATHS TIER', {
         fontSize: '9px',
         fontFamily: '"Press Start 2P", monospace',
         color: isAutoActive ? '#ffffff' : '#555555',
@@ -644,7 +654,7 @@ export class ParentDashboardScene extends Phaser.Scene {
     const difficultyButtons = [];
     for (let d = 1; d <= 4; d++) {
       const bx = GAME_WIDTH / 2 - 70 + ((d - 1) % 2) * 140;
-      const by = GAME_HEIGHT / 2 - 20 + Math.floor((d - 1) / 2) * 55;
+      const by = GAME_HEIGHT / 2 - 18 + Math.floor((d - 1) / 2) * 55;
       const isActive = player.race_difficulty === d;
 
       const btn = this.addFixed(
@@ -674,14 +684,14 @@ export class ParentDashboardScene extends Phaser.Scene {
     }
 
     const cancelBtn = this.addFixed(
-      this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 130, 'CANCEL', {
+      this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 140, 'CANCEL', {
         fontSize: '10px',
         fontFamily: '"Press Start 2P", monospace',
         color: '#cc3333',
       }).setOrigin(0.5).setInteractive({ useHandCursor: true })
     );
 
-    const allElements = [overlay, dialog, title, autoBtn, autoBtnText, cancelBtn, ...difficultyButtons];
+    const allElements = [overlay, dialog, title, subtitle, autoBtn, autoBtnText, cancelBtn, ...difficultyButtons];
     const cleanup = () => {
       allElements.forEach(el => el.destroy());
       this._dialogOpen = false;
