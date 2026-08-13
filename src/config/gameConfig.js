@@ -70,6 +70,27 @@ export function applyAssist(tierDiff, assistLevel) {
   };
 }
 
+/**
+ * Course difficulty progression — the upward half of the assist system.
+ *
+ * ASSIST absorbs a rough patch within a level; this moves the level itself,
+ * so a player who has outgrown a course is promoted and one the assist can
+ * no longer rescue is stepped down. Assist level doubles as the hysteresis:
+ * every change resets it to ASSIST_AFTER_CHANGE, which is far enough from
+ * both triggers that neither can re-fire for several races.
+ */
+export const DIFFICULTY_PROGRESSION = {
+  PROMOTE_WINDOW: 5,
+  PROMOTE_WINS: 4,          // 4 of the last 5 finishes are 1st...
+  PROMOTE_MAX_ASSIST: 0,    // ...and they needed no assist to get them
+  DEMOTE_WINDOW: 3,
+  DEMOTE_STRUGGLES: 2,      // 2 of the last 3 finishes are 3rd/4th...
+  DEMOTE_MIN_ASSIST: 3,     // ...with the assist already maxed out
+  ASSIST_AFTER_CHANGE: 1,   // cushion at the new level, and the hysteresis
+  MIN_LEVEL: 1,
+  MAX_LEVEL: 4,
+};
+
 // Obstacles
 export const OBSTACLE_SPAWN_INTERVAL = 1200; // ms between obstacle spawns
 export const OBSTACLE_MIN_GAP = 70; // Minimum gap between obstacles on same row

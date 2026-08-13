@@ -1,4 +1,5 @@
 import { supabase } from './SupabaseClient.js';
+import { DIFFICULTY_PROGRESSION } from '../config/gameConfig.js';
 
 // In-memory cache of the current player
 let currentPlayer = null;
@@ -298,49 +299,75 @@ export const PlayerManager = {
 
   /**
    * Pin the course difficulty, or pass null to return it to auto.
+   *
+   * Stamps difficulty_changed_at so the auto-adaptation windows in
+   * updateAssistLevel() and updateRaceDifficulty() start counting fresh
+   * from here: a parent's manual change invalidates the race history that
+   * led up to it, exactly like an automatic promotion/demotion does.
    */
   async setRaceDifficulty(playerId, difficulty) {
-    await this.updatePlayerStats(playerId, { race_difficulty: difficulty });
+    const changedAt = new Date().toISOString();
+    await this.updatePlayerStats(playerId, {
+      race_difficulty: difficulty,
+      difficulty_changed_at: changedAt,
+    });
     if (currentPlayer && currentPlayer.id === playerId) {
       currentPlayer.race_difficulty = difficulty;
+      currentPlayer.difficulty_changed_at = changedAt;
     }
   },
 
   /**
    * Silently adjust the comeback assist level (0-3) after a race, based on
    * the player's last 3 sessions across BOTH games (frustration on the ski
-   * hill and the go-kart track isn't game-specific).
+   * hill and the go-kart track isn't game-specific) — but only sessions
+   * played since the last race_difficulty change (difficulty_changed_at).
+   * A level change invalidates the evidence that led to it: the races just
+   * before a demotion are the very struggles that caused it, and races just
+   * before a promotion were raced against the OLD, easier course, so
+   * counting either here would let the assist immediately re-fire before
+   * the player has raced even once at the new level.
    *
    * This is deliberately never surfaced to the player — a child shown
    * "difficulty lowered" learns the wrong lesson. It's a quiet nudge only:
    * two or more bottom-of-the-pack finishes (position >= 3) in the last 3
-   * races raises the assist by one level, and it's handed back automatically
-   * (lowered by one) once they start winning again (two or more 1st-place
-   * finishes in the last 3). Anything in between leaves it alone.
+   * qualifying races raises the assist by one level, and it's handed back
+   * automatically (lowered by one) once they start winning again (two or
+   * more 1st-place finishes in the last 3). Anything in between leaves it
+   * alone.
    *
    * @param {string} playerId
    * @returns {number} the assist level now in effect (0-3)
    */
   async updateAssistLevel(playerId) {
+    // Read the authoritative current level from the DB (not the in-memory
+    // cache, which may be stale) — this is also what we return if there's
+    // not enough race history yet to act on. Fetched before the sessions
+    // query below because that query needs difficulty_changed_at to filter
+    // on.
+    const { data: playerRow } = await supabase
+      .from('players')
+      .select('assist_level, difficulty_changed_at')
+      .eq('id', playerId)
+      .single();
+
+    if (!playerRow) return 0;
+
+    const current = Math.min(Math.max(playerRow.assist_level || 0, 0), 3);
+
     const { data: sessions, error } = await supabase
       .from('sessions')
       .select('finish_position')
       .eq('player_id', playerId)
       .not('finish_position', 'is', null)
+      .gt('played_at', playerRow.difficulty_changed_at)
       .order('played_at', { ascending: false })
       .limit(3);
 
-    // Read the authoritative current level from the DB (not the in-memory
-    // cache, which may be stale) — this is also what we return if there's
-    // not enough race history yet to act on.
-    const { data: playerRow } = await supabase
-      .from('players')
-      .select('assist_level')
-      .eq('id', playerId)
-      .single();
-    const current = Math.min(Math.max(playerRow?.assist_level || 0, 0), 3);
-
-    // A new player shouldn't get assisted off two races.
+    // A new player, or one who just changed level, shouldn't get assisted
+    // off two races — straight after a change there are zero qualifying
+    // sessions, so this returns current unchanged until enough races have
+    // been played at the new level.
     if (error || !sessions || sessions.length < 3) {
       return current;
     }
@@ -360,6 +387,115 @@ export const PlayerManager = {
     await this.updatePlayerStats(playerId, { assist_level: next });
     if (currentPlayer && currentPlayer.id === playerId) {
       currentPlayer.assist_level = next;
+    }
+    return next;
+  },
+
+  /**
+   * Silently move the course difficulty level (1-4) up or down after a race
+   * — the upward half of the assist system.
+   *
+   * updateAssistLevel() above absorbs a rough patch within a level, but it
+   * only ever makes things easier, so a player who has genuinely outgrown
+   * their course would be stuck there forever. This moves the level itself,
+   * but only once the assist has already had its say, so the two can't
+   * fight each other:
+   *
+   *   PROMOTE — the assist needed no help at all (assistLevel is at or below
+   *   PROMOTE_MAX_ASSIST) AND at least PROMOTE_WINS of the last
+   *   PROMOTE_WINDOW finishes were 1st place.
+   *
+   *   DEMOTE — the assist is already maxed out (assistLevel is at or above
+   *   DEMOTE_MIN_ASSIST) AND at least DEMOTE_STRUGGLES of the last
+   *   DEMOTE_WINDOW finishes were 3rd/4th place.
+   *
+   * Both windows only count races played since the last race_difficulty
+   * change (difficulty_changed_at). A level change invalidates the evidence
+   * that led to it: the wins that just promoted a player were raced against
+   * the OLD, easier course, and the losses that just demoted them are
+   * exactly what caused the demotion — counting either here would let a
+   * promotion snap straight back, or a demotion cascade straight through
+   * further levels, before the player has raced even once at the new
+   * level. The exact-length window checks below already return "no change"
+   * until enough qualifying races exist.
+   *
+   * Every level change resets assist_level to ASSIST_AFTER_CHANGE. That's
+   * both a cushion at the new level and the hysteresis for this function —
+   * it's far from both the 0 and 3 triggers above, so neither promotion nor
+   * demotion can re-fire for several races right after a change.
+   *
+   * @param {string} playerId
+   * @param {number} assistLevel - the assist level already in effect this
+   *   race (the return value of updateAssistLevel), so both decisions are
+   *   made from the same, freshly-computed reading.
+   * @returns {number|null} the race_difficulty now in effect (1-4), or null
+   *   if there wasn't enough data (missing sessions/player row) to evaluate.
+   */
+  async updateRaceDifficulty(playerId, assistLevel) {
+    // Fetched before the sessions query below because that query needs
+    // difficulty_changed_at to filter on.
+    const { data: playerRow } = await supabase
+      .from('players')
+      .select('race_difficulty, current_tier, difficulty_changed_at')
+      .eq('id', playerId)
+      .single();
+
+    if (!playerRow) return null;
+
+    // getRaceDifficulty() materialises a NULL race_difficulty into a
+    // concrete level — the first move a player makes locks that in.
+    const current = this.getRaceDifficulty(playerRow);
+
+    const window = Math.max(
+      DIFFICULTY_PROGRESSION.PROMOTE_WINDOW,
+      DIFFICULTY_PROGRESSION.DEMOTE_WINDOW
+    );
+    const { data: sessions, error } = await supabase
+      .from('sessions')
+      .select('finish_position')
+      .eq('player_id', playerId)
+      .not('finish_position', 'is', null)
+      .gt('played_at', playerRow.difficulty_changed_at)
+      .order('played_at', { ascending: false })
+      .limit(window);
+
+    if (error || !sessions) return null;
+
+    // Sessions are newest-first, so the first N entries are the N most
+    // recent — no re-sorting needed.
+    const promoteSlice = sessions.slice(0, DIFFICULTY_PROGRESSION.PROMOTE_WINDOW);
+    const demoteSlice = sessions.slice(0, DIFFICULTY_PROGRESSION.DEMOTE_WINDOW);
+
+    let next = current;
+    if (
+      assistLevel <= DIFFICULTY_PROGRESSION.PROMOTE_MAX_ASSIST &&
+      promoteSlice.length === DIFFICULTY_PROGRESSION.PROMOTE_WINDOW &&
+      promoteSlice.filter(s => s.finish_position === 1).length >= DIFFICULTY_PROGRESSION.PROMOTE_WINS
+    ) {
+      next = Math.min(current + 1, DIFFICULTY_PROGRESSION.MAX_LEVEL);
+    } else if (
+      assistLevel >= DIFFICULTY_PROGRESSION.DEMOTE_MIN_ASSIST &&
+      demoteSlice.length === DIFFICULTY_PROGRESSION.DEMOTE_WINDOW &&
+      demoteSlice.filter(s => s.finish_position >= 3).length >= DIFFICULTY_PROGRESSION.DEMOTE_STRUGGLES
+    ) {
+      next = Math.max(current - 1, DIFFICULTY_PROGRESSION.MIN_LEVEL);
+    }
+
+    // Covers no trigger firing at all, and also a promote/demote trigger
+    // firing right at the MAX_LEVEL cap / MIN_LEVEL floor — either way,
+    // nothing to persist.
+    if (next === current) return current;
+
+    const changedAt = new Date().toISOString();
+    await this.updatePlayerStats(playerId, {
+      race_difficulty: next,
+      assist_level: DIFFICULTY_PROGRESSION.ASSIST_AFTER_CHANGE,
+      difficulty_changed_at: changedAt,
+    });
+    if (currentPlayer && currentPlayer.id === playerId) {
+      currentPlayer.race_difficulty = next;
+      currentPlayer.assist_level = DIFFICULTY_PROGRESSION.ASSIST_AFTER_CHANGE;
+      currentPlayer.difficulty_changed_at = changedAt;
     }
     return next;
   },

@@ -516,11 +516,14 @@ export class ResultsScene extends Phaser.Scene {
       console.error('Adaptive tier check failed:', e);
     }
 
-    // --- Comeback assist (silent — deliberately never shown to the player) ---
+    // --- Difficulty adaptation (silent — deliberately never shown to the
+    // player). The assist moves first; the course level then moves only if
+    // the assist is exhausted or plainly unnecessary, so they can't fight. ---
     try {
-      await PlayerManager.updateAssistLevel(this.playerId);
+      const assistLevel = await PlayerManager.updateAssistLevel(this.playerId);
+      await PlayerManager.updateRaceDifficulty(this.playerId, assistLevel);
     } catch (e) {
-      console.error('Assist level update failed:', e);
+      console.error('Difficulty adaptation failed:', e);
     }
   }
 
