@@ -10,8 +10,11 @@ import {
   COLORS, TIER_DIFFICULTY,
   SLOPE_THEMES, SLOPE_THEME_KEYS,
   AI_SKIERS,
+  spawnDistanceFor,
+  applyAssist,
 } from '../config/gameConfig.js';
 import { AIController } from '../systems/AIController.js';
+import { PlayerManager } from '../systems/PlayerManager.js';
 import { MathEngine } from '../systems/MathEngine.js';
 import { MathPopup } from '../ui/MathPopup.js';
 import { RACE_MATH, COINS } from '../config/mathConfig.js';
@@ -38,14 +41,26 @@ export class RaceScene extends Phaser.Scene {
     const themeKey = this.themeKey || Phaser.Math.RND.pick(SLOPE_THEME_KEYS);
     this.theme = SLOPE_THEMES[themeKey];
 
-    // --- Tier-based difficulty ---
-    const tierDiff = TIER_DIFFICULTY[this.playerTier] || TIER_DIFFICULTY[2];
+    // --- Course difficulty (independent of the maths tier) + comeback assist ---
+    // Falls back to the maths tier when nobody is signed in, which is the
+    // pre-split behaviour for a guest run.
+    const currentPlayer = PlayerManager.getCurrentPlayer();
+    this.raceDifficulty = currentPlayer
+      ? PlayerManager.getRaceDifficulty(currentPlayer)
+      : this.playerTier;
+    this.assistLevel = currentPlayer ? PlayerManager.getAssistLevel(currentPlayer) : 0;
+
+    const tierDiff = TIER_DIFFICULTY[this.raceDifficulty] || TIER_DIFFICULTY[2];
+    const assist = applyAssist(tierDiff, this.assistLevel);
+
     this.tierScrollSpeed = tierDiff.baseScrollSpeed;
     this.tierMaxCleanSpeed = tierDiff.maxCleanSpeed;
     this.tierBoostSpeed = tierDiff.boostScrollSpeed;
     this.tierRaceDistance = tierDiff.raceDistance;
-    this.tierMaxObstacles = tierDiff.maxObstaclesPerSpawn;
-    this.tierAIBaseSpeed = tierDiff.baseScrollSpeed * tierDiff.aiSpeedScale;
+    this.tierMaxObstacles = assist.maxObstacles;
+    this.tierAIBaseSpeed = assist.aiBaseSpeed;
+    this.assistRubberBandAheadMax = assist.rubberBandAheadMax;
+    this.assistSpacingMultiplier = assist.spacingMultiplier;
 
     // --- State ---
     this.scrollSpeed = this.tierScrollSpeed;
@@ -88,12 +103,11 @@ export class RaceScene extends Phaser.Scene {
 
     // --- Obstacles group ---
     this.obstacles = this.physics.add.group();
-    this.obstacleTimer = this.time.addEvent({
-      delay: tierDiff.obstacleSpawnInterval,
-      callback: this.spawnObstacle,
-      callbackScope: this,
-      loop: true,
-    });
+    // Distance-based spawning — see spawnDistanceFor() for why this is not a timer.
+    this.obstacleSpawnDistance = spawnDistanceFor(
+      tierDiff.obstacleSpawnInterval, tierDiff.maxCleanSpeed
+    ) * this.assistSpacingMultiplier;
+    this.nextObstacleSpawnAt = this.obstacleSpawnDistance;
 
     // --- Finish line ---
     this.finishLineSpawned = false;
@@ -161,6 +175,7 @@ export class RaceScene extends Phaser.Scene {
 
       // Create AI controller
       const controller = new AIController(this, config, sprite, this.tierAIBaseSpeed);
+      controller.rubberBandAheadMax = this.assistRubberBandAheadMax;
       this.aiControllers.push(controller);
       this.aiSprites.push(sprite);
     });
@@ -690,7 +705,6 @@ export class RaceScene extends Phaser.Scene {
     this.raceFinished = true;
     this.playerFinishTime = this.raceTime;
     this.targetSpeed = 0;
-    this.obstacleTimer.remove();
 
     // Determine ALL finish positions at this moment based on distance.
     // Player just crossed the finish line (distance >= tierRaceDistance).
@@ -954,6 +968,12 @@ export class RaceScene extends Phaser.Scene {
     // --- Track distance ---
     if (!this.raceFinished) {
       this.distanceTraveled += this.scrollSpeed * dt;
+    }
+
+    // --- Spawn obstacles by distance travelled, not elapsed time ---
+    if (!this.raceFinished && this.distanceTraveled >= this.nextObstacleSpawnAt) {
+      this.spawnObstacle();
+      this.nextObstacleSpawnAt = this.distanceTraveled + this.obstacleSpawnDistance;
     }
 
     // --- Scroll background ---

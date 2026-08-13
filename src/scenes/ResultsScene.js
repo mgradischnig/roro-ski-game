@@ -515,6 +515,13 @@ export class ResultsScene extends Phaser.Scene {
     } catch (e) {
       console.error('Adaptive tier check failed:', e);
     }
+
+    // --- Comeback assist (silent — deliberately never shown to the player) ---
+    try {
+      await PlayerManager.updateAssistLevel(this.playerId);
+    } catch (e) {
+      console.error('Assist level update failed:', e);
+    }
   }
 
   showNewBadges(badges) {

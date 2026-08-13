@@ -2,51 +2,62 @@
 // for the ski game, but for the "RoRo Racing" car mode.
 import { GAME_WIDTH } from './gameConfig.js';
 
-// Per-tier difficulty scaling for car racing (tier 2 = baseline, matches
-// gameConfig's TIER_DIFFICULTY values verbatim, plus a traffic spawn cadence).
-// Static hazards keep the existing obstacleSpawnInterval cadence; traffic
-// gets its own slower cadence because traffic moves at relative speed and
-// lingers ~3x longer on screen.
+// Per-tier difficulty scaling for car racing (tier 2 = baseline). Speeds and
+// race distances match gameConfig's TIER_DIFFICULTY; the hazard cadences do
+// NOT, and deliberately so.
+//
+// The car track stacks static hazards AND traffic inside a corridor that is
+// only 330px wide (CORRIDOR_HALF_WIDTH * 2) and curves, versus 400px of
+// straight slope in the ski game. Traffic also drives at 55% of scroll speed,
+// so it closes at only 45% of the relative rate and lingers ~2.2x longer on
+// screen than a static hazard. Sharing the ski cadence therefore produced
+// roughly twice the hazards per unit of corridor width — car races averaged
+// 16 hits against 7.6 on skis, with individual races reaching 23.
+//
+// These cadences are set so hazards-on-screen per px of corridor width lands
+// near the ski game's for the tiers actually played (3 and 4), and no tier
+// spawns 3 static obstacles at once — in a 330px curving corridor a 3-wide
+// spawn can leave no gap at all.
 export const CAR_TIER_DIFFICULTY = {
   1: {
     baseScrollSpeed: 140,
     maxCleanSpeed: 172,
     boostScrollSpeed: 215,
-    obstacleSpawnInterval: 1200,
+    obstacleSpawnInterval: 1600,
     maxObstaclesPerSpawn: 2,
     raceDistance: 4500,
     aiSpeedScale: 0.95,
-    trafficSpawnInterval: 3200,
+    trafficSpawnInterval: 4600,
   },
   2: {
     baseScrollSpeed: 150,
     maxCleanSpeed: 185,
     boostScrollSpeed: 230,
-    obstacleSpawnInterval: 1000,
+    obstacleSpawnInterval: 1400,
     maxObstaclesPerSpawn: 2,
     raceDistance: 5000,
     aiSpeedScale: 1.0,
-    trafficSpawnInterval: 2800,
+    trafficSpawnInterval: 4200,
   },
   3: {
     baseScrollSpeed: 160,
     maxCleanSpeed: 200,
     boostScrollSpeed: 245,
-    obstacleSpawnInterval: 850,
-    maxObstaclesPerSpawn: 3,
+    obstacleSpawnInterval: 1150,
+    maxObstaclesPerSpawn: 2,
     raceDistance: 5500,
     aiSpeedScale: 1.04,
-    trafficSpawnInterval: 2400,
+    trafficSpawnInterval: 3400,
   },
   4: {
     baseScrollSpeed: 170,
     maxCleanSpeed: 215,
     boostScrollSpeed: 260,
-    obstacleSpawnInterval: 750,
-    maxObstaclesPerSpawn: 3,
+    obstacleSpawnInterval: 1000,
+    maxObstaclesPerSpawn: 2,
     raceDistance: 6000,
     aiSpeedScale: 1.07,
-    trafficSpawnInterval: 2100,
+    trafficSpawnInterval: 3000,
   },
 };
 
@@ -75,7 +86,7 @@ export function roadCenterAt(distance) {
 
 // Hazards that spin the car instead of slowing it (oil physics):
 export const SPIN_HAZARDS = ['oil_slick', 'ice_patch', 'puddle'];
-export const OIL_SPAWN_CHANCE = 0.12; // fraction of static spawns that are oil slicks (all tracks)
+export const OIL_SPAWN_CHANCE = 0.08; // fraction of static spawns that are oil slicks (all tracks)
 
 // Track themes — random visual variety per race (same shape as gameConfig's
 // SLOPE_THEMES). Only one track for now.
@@ -174,7 +185,7 @@ export const CHAMPIONSHIP = {
 // AI catch-up boost erodes it immediately.
 export const CAR_QUALIFIER_REWARDS = {
   5: { polePosition: true, armor: true, label: 'Pole Position + Bumper Armor!' },
-  4: { polePosition: true, armor: false, label: 'Pole Position!' },
+  4: { polePosition: true, armor: true, label: 'Pole Position + Bumper Armor!' },
   3: { polePosition: false, armor: false, label: null },
   2: { polePosition: false, armor: false, label: null },
   1: { polePosition: false, armor: false, label: null },

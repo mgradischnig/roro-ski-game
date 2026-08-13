@@ -33,6 +33,11 @@ export class AIController {
     this.targetX = GAME_WIDTH * config.lanePreference;
     this.moveSpeed = PLAYER_SPEED * (0.6 + config.skill * 0.4);
 
+    // Catch-up brake applied when this AI is far AHEAD of the player. Scenes
+    // raise it for assisted players: the stock 8% cap barely moved the needle
+    // however far behind the player fell, so a bad start was unrecoverable.
+    this.rubberBandAheadMax = RUBBER_BAND_AI_AHEAD_MAX;
+
     // Personality state
     this.raceElapsed = 0;          // Seconds since race start
     this.erraticPhase = 0;         // For Finn's burst/coast cycle
@@ -83,7 +88,7 @@ export class AIController {
     if (gap > RUBBER_BAND_DEAD_ZONE) {
       // AI is far ahead — slow down subtly
       const excess = gap - RUBBER_BAND_DEAD_ZONE;
-      rubberBandFactor = 1.0 - Math.min(excess * 0.0002, RUBBER_BAND_AI_AHEAD_MAX);
+      rubberBandFactor = 1.0 - Math.min(excess * 0.0002, this.rubberBandAheadMax);
     } else if (gap < -RUBBER_BAND_DEAD_ZONE) {
       // AI is far behind — speed up subtly
       const deficit = -gap - RUBBER_BAND_DEAD_ZONE;

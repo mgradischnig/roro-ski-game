@@ -286,7 +286,7 @@ export const MathEngine = {
       }
     }
 
-    // Check drop (last 10 below 60%)
+    // Check drop (last 10 below ADAPTIVE.DROP_ACCURACY)
     const last10 = recentResponses.slice(-10);
     if (last10.length >= ADAPTIVE.DROP_MIN_QUESTIONS) {
       const accuracy = last10.filter(r => r.is_correct).length / 10;

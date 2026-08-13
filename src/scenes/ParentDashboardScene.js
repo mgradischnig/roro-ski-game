@@ -12,7 +12,7 @@ import { supabase } from '../systems/SupabaseClient.js';
  * Features:
  * - Scrollable content area (touch drag / mouse wheel)
  * - Per-child stats: overview, math progress, badges, daily activity
- * - Controls: change tier, add player, reset progress
+ * - Controls: change maths tier, change race difficulty, add player, reset progress
  */
 export class ParentDashboardScene extends Phaser.Scene {
   constructor() {
@@ -257,7 +257,12 @@ export class ParentDashboardScene extends Phaser.Scene {
       this.addContentText(25, cy, `Name: ${player.name}`, '#1d3557', '10px');
       cy += 28;
       const tierName = MATH_TIERS[player.current_tier]?.name || '';
-      this.addContentText(25, cy, `Tier: ${player.current_tier} — ${tierName}`, '#457b9d', '10px');
+      this.addContentText(25, cy, `Maths: ${player.current_tier} — ${tierName}`, '#457b9d', '10px');
+      cy += 28;
+      const rd = PlayerManager.getRaceDifficulty(player);
+      const rdLabel = player.race_difficulty ? `${rd}` : `${rd} (auto)`;
+      const assist = PlayerManager.getAssistLevel(player);
+      this.addContentText(25, cy, `Race: ${rdLabel}${assist ? `  Assist: ${assist}` : ''}`, '#457b9d', '10px');
       cy += 28;
       this.addContentText(25, cy, `Coins: ${player.coins}`, '#f4a261', '10px');
       cy += 28;
@@ -443,7 +448,8 @@ export class ParentDashboardScene extends Phaser.Scene {
 
     // --- Control buttons (inside scrollable area, after content) ---
     y += 30;
-    y = this.createScrollableButton(y, 'CHANGE TIER', COLORS.UI_DARK, () => this.showTierOverride());
+    y = this.createScrollableButton(y, 'MATHS TIER', COLORS.UI_DARK, () => this.showTierOverride());
+    y = this.createScrollableButton(y + 15, 'RACE DIFFICULTY', 0x457b9d, () => this.showRaceDifficultyOverride());
     y = this.createScrollableButton(y + 15, 'ADD PLAYER', COLORS.UI_SUCCESS, () => this.showAddPlayer());
     y = this.createScrollableButton(y + 15, 'RESET PROGRESS', 0xcc3333, () => this.showResetConfirm());
 
@@ -578,6 +584,104 @@ export class ParentDashboardScene extends Phaser.Scene {
     );
 
     const allElements = [overlay, dialog, title, cancelBtn, ...tierButtons];
+    const cleanup = () => {
+      allElements.forEach(el => el.destroy());
+      this._dialogOpen = false;
+    };
+    cancelBtn.on('pointerup', cleanup);
+  }
+
+  showRaceDifficultyOverride() {
+    const player = this.players[this.selectedPlayerIndex];
+    if (!player) return;
+    this._dialogOpen = true;
+
+    const overlay = this.addFixed(
+      this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2,
+        GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.7).setInteractive()
+    );
+
+    const dialog = this.addFixed(
+      this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2,
+        320, 320, 0xffffff).setStrokeStyle(2, COLORS.UI_DARK)
+    );
+
+    const title = this.addFixed(
+      this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 125,
+        `Race difficulty\nfor ${player.name}`, {
+          fontSize: '11px',
+          fontFamily: '"Press Start 2P", monospace',
+          color: '#1d3557',
+          align: 'center',
+          lineSpacing: 8,
+        }).setOrigin(0.5)
+    );
+
+    const isAutoActive = player.race_difficulty == null;
+    const autoBtn = this.addFixed(
+      this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, 260, 40,
+        isAutoActive ? COLORS.UI_ACCENT : 0xeeeeee)
+        .setInteractive({ useHandCursor: true })
+        .setStrokeStyle(2, isAutoActive ? COLORS.UI_DARK : 0xcccccc)
+    );
+
+    const autoBtnText = this.addFixed(
+      this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, 'AUTO (= MATHS TIER)', {
+        fontSize: '9px',
+        fontFamily: '"Press Start 2P", monospace',
+        color: isAutoActive ? '#ffffff' : '#555555',
+      }).setOrigin(0.5)
+    );
+
+    autoBtn.on('pointerup', async () => {
+      await PlayerManager.setRaceDifficulty(player.id, null);
+      player.race_difficulty = null;
+      cleanup();
+      this.clearScrollableContent();
+      await this.showPlayerData(player);
+    });
+
+    const difficultyButtons = [];
+    for (let d = 1; d <= 4; d++) {
+      const bx = GAME_WIDTH / 2 - 70 + ((d - 1) % 2) * 140;
+      const by = GAME_HEIGHT / 2 - 20 + Math.floor((d - 1) / 2) * 55;
+      const isActive = player.race_difficulty === d;
+
+      const btn = this.addFixed(
+        this.add.rectangle(bx, by, 125, 42,
+          isActive ? COLORS.UI_ACCENT : 0xeeeeee)
+          .setInteractive({ useHandCursor: true })
+          .setStrokeStyle(2, isActive ? COLORS.UI_DARK : 0xcccccc)
+      );
+
+      const btnText = this.addFixed(
+        this.add.text(bx, by, `Level ${d}`, {
+          fontSize: '10px',
+          fontFamily: '"Press Start 2P", monospace',
+          color: isActive ? '#ffffff' : '#555555',
+        }).setOrigin(0.5)
+      );
+
+      btn.on('pointerup', async () => {
+        await PlayerManager.setRaceDifficulty(player.id, d);
+        player.race_difficulty = d;
+        cleanup();
+        this.clearScrollableContent();
+        await this.showPlayerData(player);
+      });
+
+      difficultyButtons.push(btn, btnText);
+    }
+
+    const cancelBtn = this.addFixed(
+      this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 130, 'CANCEL', {
+        fontSize: '10px',
+        fontFamily: '"Press Start 2P", monospace',
+        color: '#cc3333',
+      }).setOrigin(0.5).setInteractive({ useHandCursor: true })
+    );
+
+    const allElements = [overlay, dialog, title, autoBtn, autoBtnText, cancelBtn, ...difficultyButtons];
     const cleanup = () => {
       allElements.forEach(el => el.destroy());
       this._dialogOpen = false;
